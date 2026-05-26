@@ -27,14 +27,14 @@ map is at **[docs/CODE_MAP.md](docs/CODE_MAP.md)**.
 ## Get the Code
 
 ```bash
-git clone https://github.com/sriramrokkam/agentic-hybrid-rag-on-sap-btp.git
-cd agentic-hybrid-rag-on-sap-btp
+git clone https://github.com/sriramrokkam/book-agentic-hybrid-rag-on-btp.git
+cd book-agentic-hybrid-rag-on-btp
 ```
 
 > **Note:** Replace the URL above with your actual GitHub remote once you push
 > this repo. To add the remote now:
 > ```bash
-> git remote add origin https://github.com/<your-username>/agentic-hybrid-rag-on-sap-btp.git
+> git remote add origin https://github.com/<your-username>/book-agentic-hybrid-rag-on-btp.git
 > git push -u origin main
 > ```
 
@@ -88,7 +88,7 @@ Install these before you begin.
 ## Project Structure
 
 ```
-agentic-hybrid-rag-on-sap-btp/
+book-agentic-hybrid-rag-on-btp/
 │
 ├── agents/                         Python FastAPI + LangGraph service
 │   ├── agents/
@@ -145,8 +145,8 @@ start the CAP frontend.
 ### Step 1 — Clone the repository
 
 ```bash
-git clone https://github.com/sriramrokkam/agentic-hybrid-rag-on-sap-btp.git
-cd agentic-hybrid-rag-on-sap-btp
+git clone https://github.com/sriramrokkam/book-agentic-hybrid-rag-on-btp.git
+cd book-agentic-hybrid-rag-on-btp
 ```
 
 ---
