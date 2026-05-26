@@ -11,8 +11,6 @@
 
 Author: Sriram Rokkam
 
-First Edition
-
 First Edition, 2026
 
 ---
@@ -29,7 +27,7 @@ reviews and certain other noncommercial uses permitted by copyright law.
 
 The code samples in this book are released under the MIT License and are
 freely available at:
-https://github.com/sriramrokkam/agentic-ai-sap-btp-book
+https://github.com/sriramrokkam/book-agentic-hybrid-rag-on-btp
 
 SAP, SAP BTP, SAP HANA, SAP CAP, and Joule are trademarks or registered
 trademarks of SAP SE. Google Cloud, Vertex AI, and Gemini are trademarks
@@ -186,6 +184,71 @@ All tools and accounts are free. Chapter 2 walks through every setup step.
 
 ---
 
+## Companion Code Repository
+
+All source code for this book lives in a single GitHub repository:
+
+```
+https://github.com/sriramrokkam/book-agentic-hybrid-rag-on-btp
+```
+
+### Repository Structure
+
+```
+book-agentic-hybrid-rag-on-btp/
+├── agents/                # Python FastAPI + LangGraph agent layer
+│   ├── agents/            #   LangGraph chains and orchestrator
+│   ├── srv/               #   HANA, vector, KG, and doc services
+│   ├── main.py            #   FastAPI entrypoint — all HTTP endpoints
+│   ├── requirements.txt
+│   └── .env.example       #   Required environment variables template
+├── cap-srv/               # CAP Node.js OData V4 service
+│   ├── db/schema.cds      #   Data model
+│   ├── srv/service.cds    #   Service definition and actions
+│   ├── srv/service.js     #   Action handlers (proxies to agent layer)
+│   └── .env.example
+├── MSDS_Ontology.ttl      # OWL ontology constraining knowledge graph
+├── docs/                  # Book chapters and screenshots (this folder)
+│   ├── CODE_MAP.md        #   Chapter → source file cross-reference
+│   └── chapters/          #   All chapter markdown files
+└── README.md              # Complete local setup guide
+```
+
+### Quick Start
+
+```bash
+# 1. Clone
+git clone https://github.com/sriramrokkam/book-agentic-hybrid-rag-on-btp.git
+cd book-agentic-hybrid-rag-on-btp
+
+# 2. Set up Python environment
+python3 -m venv agents/.venv
+source agents/.venv/bin/activate
+pip install -r agents/requirements.txt
+
+# 3. Configure credentials
+cp agents/.env.example agents/.env
+# Edit agents/.env — see README.md for where to find each value
+
+# 4. Run the agent layer
+uvicorn agents.main:app --reload --host 0.0.0.0 --port 8000
+
+# 5. Run the CAP layer (separate terminal)
+cd cap-srv && npm install && cds serve
+```
+
+See `README.md` in the repository root for the complete step-by-step
+setup guide, including all environment variables, endpoints, and
+deployment instructions for SAP BTP Cloud Foundry.
+
+### Chapter-to-Code Cross-Reference
+
+`docs/CODE_MAP.md` maps every chapter to the exact source files and
+functions it covers. Use it to jump directly to the code for any
+chapter without searching the repository.
+
+---
+
 ## How to Use This Book
 
 ### Reading Cover to Cover (Recommended)
@@ -218,7 +281,7 @@ Every chapter in this book follows the same pattern:
 All code is in the companion GitHub repository:
 
 ```
-https://github.com/sriramrokkam/agentic-ai-sap-btp-book
+https://github.com/sriramrokkam/book-agentic-hybrid-rag-on-btp
 ```
 
 Each chapter has a corresponding folder in the repo. If you get stuck,
@@ -283,10 +346,9 @@ with actual screenshots in the final published version.
 
 ## Acknowledgements
 
-*[To be added by Sriram Rokkam.]*
-
-*Suggested: colleagues who reviewed chapters, the SAP and Google Cloud
-developer communities, anyone who provided feedback or inspiration.]*
+*[To be added by Sriram Rokkam. Suggested: colleagues who reviewed
+chapters, the SAP and Google Cloud developer communities, anyone who
+provided feedback or inspiration.]*
 
 ---
 
