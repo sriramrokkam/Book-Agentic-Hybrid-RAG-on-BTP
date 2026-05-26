@@ -1,0 +1,68 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix msds: <http://msds.knowledge-graph.org/ontology#> .
+
+# ── Classes ──────────────────────────────────────────────────────────────────
+
+msds:Material a owl:Class ;
+    rdfs:label "Material" .
+
+msds:HazardCode a owl:Class ;
+    rdfs:label "GHS Hazard Code" .
+
+msds:ExposureLimit a owl:Class ;
+    rdfs:label "Occupational Exposure Limit" .
+
+msds:Precaution a owl:Class ;
+    rdfs:label "Safety Precaution" .
+
+msds:Supplier a owl:Class ;
+    rdfs:label "Supplier" .
+
+# ── Object Properties (node → node) ──────────────────────────────────────────
+
+msds:hasHazardCode a owl:ObjectProperty ;
+    rdfs:domain msds:Material ;
+    rdfs:range msds:HazardCode ;
+    rdfs:label "has hazard code" .
+
+msds:hasExposureLimit a owl:ObjectProperty ;
+    rdfs:domain msds:Material ;
+    rdfs:range msds:ExposureLimit ;
+    rdfs:label "has exposure limit" .
+
+msds:requiresPrecaution a owl:ObjectProperty ;
+    rdfs:domain msds:Material ;
+    rdfs:range msds:Precaution ;
+    rdfs:label "requires precaution" .
+
+msds:hasSupplier a owl:ObjectProperty ;
+    rdfs:domain msds:Material ;
+    rdfs:range msds:Supplier ;
+    rdfs:label "has supplier" .
+
+# ── Datatype Properties (node → literal) ─────────────────────────────────────
+
+msds:code a owl:DatatypeProperty ;
+    rdfs:domain msds:HazardCode ;
+    rdfs:label "hazard code value" .
+
+msds:description a owl:DatatypeProperty ;
+    rdfs:label "description" .
+
+msds:limitValue a owl:DatatypeProperty ;
+    rdfs:domain msds:ExposureLimit ;
+    rdfs:label "limit value" .
+
+msds:limitUnit a owl:DatatypeProperty ;
+    rdfs:domain msds:ExposureLimit ;
+    rdfs:label "limit unit" .
+
+msds:precautionText a owl:DatatypeProperty ;
+    rdfs:domain msds:Precaution ;
+    rdfs:label "precaution text" .
+
+msds:hazardDescription a owl:DatatypeProperty ;
+    rdfs:domain msds:HazardCode ;
+    rdfs:label "official GHS hazard statement text" .

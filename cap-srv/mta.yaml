@@ -1,0 +1,56 @@
+_schema-version: "3.3.0"
+ID: msds-hybrid-rag
+version: 1.0.0
+description: Hybrid RAG MSDS system on SAP BTP — CAP frontend + Python agent backend
+
+modules:
+
+  # ── Python FastAPI agent service ─────────────────────────────────────────────
+  - name: hybrid-rag-agent
+    type: python
+    path: agents
+    build-parameters:
+      builder: custom
+      commands:
+        - pip install -r requirements.txt
+    parameters:
+      memory: 512M
+      disk-quota: 1G
+    properties:
+      PYTHONPATH: "."
+    requires:
+      - name: hybrid-rag-agent-env
+
+  # ── SAP CAP Node.js OData V4 service ─────────────────────────────────────────
+  - name: msds-hybrid-rag-cap
+    type: nodejs
+    path: cap-srv
+    build-parameters:
+      builder: npm
+      build-result: gen/srv
+    parameters:
+      memory: 256M
+      disk-quota: 512M
+    properties:
+      AGENT_URL: "~{hybrid-rag-agent/url}"
+    requires:
+      - name: msds-hybrid-rag-hana
+      - name: hybrid-rag-agent-env
+    provides:
+      - name: cap-srv-api
+        properties:
+          url: ${default-url}
+
+resources:
+
+  # ── SAP HANA Cloud service instance ─────────────────────────────────────────
+  - name: msds-hybrid-rag-hana
+    type: com.sap.xs.hana-schema
+    parameters:
+      service: hana
+      service-plan: schema
+
+  # ── Environment / credentials user-provided service ──────────────────────────
+  # Populate with: cf cups hybrid-rag-agent-env -p '{"HANA_HOST":"...","GCP_PROJECT_ID":"..."}'
+  - name: hybrid-rag-agent-env
+    type: org.cloudfoundry.user-provided-service

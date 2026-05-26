@@ -1,0 +1,29 @@
+---
+applications:
+  - name: hybrid-rag-agent
+    buildpacks:
+      - python_buildpack
+    memory: 512M
+    disk_quota: 1G
+    instances: 1
+    command: uvicorn main:app --host 0.0.0.0 --port $PORT
+    path: .
+
+    env:
+      # HANA Cloud — supply via BTP User-Provided Service or env binding
+      HANA_HOST:    ((hana-host))
+      HANA_PORT:    "443"
+      HANA_USER:    ((hana-user))
+      HANA_PASSWORD: ((hana-password))
+
+      # Google Cloud / Vertex AI
+      GCP_PROJECT_ID: ((gcp-project-id))
+      GCP_LOCATION:   us-central1
+
+      # LangSmith observability (optional)
+      LANGCHAIN_TRACING_V2: "true"
+      LANGCHAIN_ENDPOINT:   "https://api.smith.langchain.com"
+      LANGCHAIN_API_KEY:    ((langchain-api-key))
+
+      # Python path so imports resolve from repo root
+      PYTHONPATH: "."

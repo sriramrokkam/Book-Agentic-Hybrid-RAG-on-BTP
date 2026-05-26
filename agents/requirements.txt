@@ -1,0 +1,27 @@
+# Python — core runtime
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+python-multipart>=0.0.9
+
+# SAP HANA Cloud driver
+hdbcli>=2.21.0
+
+# Google Vertex AI
+google-cloud-aiplatform>=1.55.0
+vertexai>=1.55.0
+
+# LangChain + LangGraph
+langgraph>=0.2.0
+langchain-google-genai>=2.0.0
+langchain-core>=0.3.0
+langchain>=0.2.0
+
+# PDF ingestion
+PyMuPDF>=1.24.0
+
+# Environment / config
+python-dotenv>=1.0.0
+
+# Optional: accurate token counting for chunker
+# tiktoken>=0.7.0

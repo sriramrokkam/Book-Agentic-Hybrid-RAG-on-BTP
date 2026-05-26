@@ -1,0 +1,37 @@
+{
+  "name": "msds-hybrid-rag-cap",
+  "version": "1.0.0",
+  "description": "SAP CAP OData V4 frontend for the Hybrid RAG MSDS system",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "cds serve",
+    "watch": "cds watch",
+    "build": "cds build --production",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@sap/cds": "^8.0.0",
+    "@sap/cds-dk": "^8.0.0",
+    "form-data": "^4.0.0",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@sap/cds-typer": "^0.28.0",
+    "jest": "^29.0.0"
+  },
+  "cds": {
+    "requires": {
+      "db": {
+        "kind": "sql"
+      },
+      "auth": {
+        "kind": "basic-auth"
+      }
+    },
+    "features": {
+      "preserve_computed_elements": true
+    }
+  }
+}
