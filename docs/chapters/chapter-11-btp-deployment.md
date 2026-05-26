@@ -47,6 +47,7 @@ The Python agent deploys first because the CAP service needs to know its URL whe
 ### Understanding manifest.yml
 
 ```yaml
+
 ---
 applications:
   - name: hybrid-rag-agent
