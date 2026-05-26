@@ -1,5 +1,6 @@
 """
 agents/srv/hdb_srv.py
+Book reference: Chapter 4 — Vector Search on SAP HANA Cloud
 
 Thread-local SAP HANA Cloud connection manager.
 Each request thread gets its own hdbcli connection — never share across threads.

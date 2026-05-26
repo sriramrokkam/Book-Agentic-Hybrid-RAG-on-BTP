@@ -1,5 +1,6 @@
 """
 agents/agents/state.py
+Book reference: Chapters 8 & 9 — HybridRAGState (Ch8), SupervisorState (Ch9)
 
 Shared TypedDict state definitions for the LangGraph agents.
 """

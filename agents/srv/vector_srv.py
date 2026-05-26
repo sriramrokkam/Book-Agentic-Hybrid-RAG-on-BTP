@@ -1,5 +1,6 @@
 """
 agents/srv/vector_srv.py
+Book reference: Chapter 4 — Vector Search on SAP HANA Cloud
 
 Vector store service for SAP HANA Cloud REAL_VECTOR columns.
 

@@ -1,5 +1,6 @@
 """
 agents/agents/supervisor.py
+Book reference: Chapter 9 — The Multi-Agent Supervisor Pattern
 
 Multi-agent supervisor — Chapter 9.
 

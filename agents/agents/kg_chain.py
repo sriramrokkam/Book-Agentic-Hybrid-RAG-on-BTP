@@ -1,5 +1,6 @@
 """
 agents/agents/kg_chain.py
+Book reference: Chapter 8 — The Parallel Hybrid RAG Agent
 
 Knowledge Graph retrieval chain (Chapter 8).
 

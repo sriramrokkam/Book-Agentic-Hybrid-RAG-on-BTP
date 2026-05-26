@@ -20,6 +20,13 @@ service MSDSService @(path: '/api') {
                 status         : String(20);
                 materialNumber : String(100);
             };
+
+            // Cascade-delete document from vector store, KG, and DB (calls DELETE /delete/{id})
+            action deleteDocument() returns {
+                materialNumber  : String(100);
+                vectorsDeleted  : Integer;
+                kgDeleted       : Boolean;
+            };
         };
 
     // ── Query actions ──────────────────────────────────────────────────────

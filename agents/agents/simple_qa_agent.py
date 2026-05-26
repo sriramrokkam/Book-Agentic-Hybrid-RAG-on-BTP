@@ -1,5 +1,6 @@
 """
 agents/agents/simple_qa_agent.py
+Book reference: Chapter 7 — LangGraph Fundamentals
 
 Simple LangGraph Q&A agent — Chapter 7.
 

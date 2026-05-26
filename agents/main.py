@@ -1,14 +1,18 @@
 """
 agents/main.py
+Book reference: Chapters 6, 8 & 9 — all HTTP endpoints
 
 FastAPI entrypoint for the Hybrid RAG Agent service.
+See docs/chapters/ for the book chapters that explain each endpoint.
 
 Endpoints:
-  GET  /health
-  POST /query           — direct parallel hybrid RAG (Chapter 8)
-  POST /query-advanced  — multi-agent supervisor (Chapter 9, optional)
-  POST /process-upload  — PDF ingestion (fire-and-forget)
-  GET  /status/{material_number} — ingestion status polling
+  GET    /health
+  POST   /query                     — parallel hybrid RAG       (Chapter 8)
+  POST   /query-advanced            — multi-agent supervisor    (Chapter 9)
+  POST   /process-upload            — PDF ingestion fire-and-forget (Chapter 6)
+  GET    /status/{material_number}  — ingestion status poll     (Chapter 6)
+  DELETE /delete/{material_number}  — cascade-delete document   (Chapter 6)
+  POST   /admin/load-ontology       — load MSDS ontology into HANA (Chapter 5)
 
 Usage (local):
   uvicorn main:app --reload --port 8000
@@ -37,6 +41,8 @@ from srv.doc_srv import (
     get_hana_connection,
     close_thread_connection,
 )
+from srv.vector_srv import delete_vectors
+from srv.kg_srv import delete_graph, load_ontology
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO)
@@ -263,3 +269,61 @@ def get_status(material_number: str):
             kg_status in ("DONE", "ERROR") and vector_status in ("DONE", "ERROR")
         ),
     }
+
+
+# ── Delete document (cascade) ─────────────────────────────────────────────────
+
+@app.delete("/delete/{material_number}")
+def delete_document(material_number: str):
+    """
+    Cascade-delete a document from both the vector store and the knowledge graph,
+    then remove its record from MSDS_DOCUMENTS.
+
+    See docs/chapters/chapter-06-pdf-ingestion.md for the data model.
+    """
+    if not MATERIAL_RE.match(material_number):
+        return JSONResponse(status_code=400, content={"error": "Invalid materialNumber"})
+
+    vectors_deleted = delete_vectors(material_number)
+    kg_deleted = delete_graph(material_number)
+
+    conn = get_hana_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM MSDS_DOCUMENTS WHERE MATERIAL_NUMBER = ?", (material_number,))
+    conn.commit()
+    cursor.close()
+    close_thread_connection()
+
+    logger.info(
+        "Deleted %s: %d vectors, KG graph removed=%s",
+        material_number, vectors_deleted, kg_deleted,
+    )
+    return {
+        "materialNumber": material_number,
+        "vectorsDeleted": vectors_deleted,
+        "kgDeleted": kg_deleted,
+    }
+
+
+# ── Admin: load ontology into HANA ────────────────────────────────────────────
+
+@app.post("/admin/load-ontology")
+def load_ontology_endpoint():
+    """
+    Load MSDS_Ontology.ttl into the HANA RDF named graph.
+    Call once after provisioning a fresh HANA instance.
+
+    See docs/chapters/chapter-05-knowledge-graph-hana.md for ontology details.
+    """
+    import os
+    ontology_path = os.path.join(os.path.dirname(__file__), "..", "MSDS_Ontology.ttl")
+    ontology_path = os.path.abspath(ontology_path)
+
+    if not os.path.exists(ontology_path):
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Ontology file not found at {ontology_path}"},
+        )
+
+    triples_loaded = load_ontology(ontology_path)
+    return {"status": "ok", "triplesLoaded": triples_loaded}

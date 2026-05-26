@@ -1,5 +1,6 @@
 """
 agents/agents/orchestrator.py
+Book reference: Chapter 8 — The Parallel Hybrid RAG Agent
 
 Parallel hybrid RAG orchestrator (Chapter 8).
 

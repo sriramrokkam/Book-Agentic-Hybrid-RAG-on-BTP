@@ -1,5 +1,6 @@
 """
 agents/tools/tools.py
+Book reference: Chapter 7 — LangGraph Fundamentals
 
 LangChain tool definitions for optional ReAct-style agent extensions.
 

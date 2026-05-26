@@ -1,5 +1,6 @@
 """
 agents/srv/doc_srv.py
+Book reference: Chapter 6 — The PDF Ingestion Pipeline
 
 PDF ingestion service — dual-pipeline (vector + KG) running in parallel threads.
 

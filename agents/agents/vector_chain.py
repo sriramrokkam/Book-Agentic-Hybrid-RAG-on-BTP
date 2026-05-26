@@ -1,5 +1,6 @@
 """
 agents/agents/vector_chain.py
+Book reference: Chapter 8 — The Parallel Hybrid RAG Agent
 
 Vector retrieval chain (Chapter 8).
 

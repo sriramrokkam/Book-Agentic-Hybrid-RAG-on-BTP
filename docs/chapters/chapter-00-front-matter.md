@@ -1,0 +1,303 @@
+# Front Matter
+## Agentic Hybrid RAG on SAP BTP
+### A Hands-On Guide with LangGraph, HANA Cloud, and Google Vertex AI
+
+---
+
+## Title Page
+
+**Agentic Hybrid RAG on SAP BTP**
+*A Hands-On Guide with LangGraph, HANA Cloud, and Google Vertex AI*
+
+Author: Sriram Rokkam
+
+First Edition
+
+First Edition, 2026
+
+---
+
+## Copyright
+
+Copyright © 2026 Sriram Rokkam. All rights reserved.
+
+No part of this publication may be reproduced, distributed, or transmitted
+in any form or by any means, including photocopying, recording, or other
+electronic or mechanical methods, without the prior written permission of
+the author, except in the case of brief quotations embodied in critical
+reviews and certain other noncommercial uses permitted by copyright law.
+
+The code samples in this book are released under the MIT License and are
+freely available at:
+https://github.com/sriramrokkam/agentic-ai-sap-btp-book
+
+SAP, SAP BTP, SAP HANA, SAP CAP, and Joule are trademarks or registered
+trademarks of SAP SE. Google Cloud, Vertex AI, and Gemini are trademarks
+of Google LLC. All other trademarks are the property of their respective
+owners. The author is not affiliated with SAP SE or Google LLC.
+
+---
+
+## Dedication
+
+*[To be added by Sriram Rokkam]*
+
+---
+
+## Foreword
+
+*[To be written by a colleague, SAP contact, or industry peer after
+the book is complete. 300–500 words. Suggested topics: why Agentic AI
+matters for SAP customers today, why the BTP + Vertex AI approach is
+relevant, and why the author is credible on this subject.]*
+
+**— [Name], [Title], [Company]**
+
+---
+
+## Preface
+
+*[To be written by Sriram Rokkam in his own voice. Suggested content below —
+edit freely, this is your personal story.]*
+
+---
+
+I have spent years working at the intersection of SAP and cloud platforms,
+watching enterprises struggle with the same problem in different forms: they
+have extraordinary data — decades of business transactions, master data,
+documents, and domain knowledge — but they cannot easily ask questions of it.
+
+The arrival of large language models changed what was possible. Suddenly,
+the gap between a business question and a data answer felt bridgeable.
+But every proof of concept I saw had the same flaw: it worked for demos
+and broke for production. The LLM hallucinated facts. The retrieval missed
+precise structured answers. The architecture did not fit the SAP ecosystem
+that customers already had invested in.
+
+This book is my answer to that problem.
+
+It builds a real system — not a toy — that combines two retrieval strategies
+that together handle what neither handles alone. It runs on platforms that
+SAP developers already know: SAP BTP, SAP HANA Cloud, and CAP Node.js.
+It uses Google Vertex AI not because it is the only option, but because it
+is excellent, well-documented, and free to get started with.
+
+Every line of code in this book has been written and tested. Every
+architecture decision has a reason. Where I made a tradeoff, I say so.
+
+My hope is that you finish this book with a working system deployed on
+SAP BTP, a clear mental model of how agentic AI actually works, and the
+confidence to take these patterns into your own projects.
+
+Let us build something real.
+
+**Sriram Rokkam**
+*May 2026*
+
+---
+
+## Who This Book Is For
+
+This book is written for:
+
+- **SAP developers and architects** familiar with SAP BTP, CAP, or ABAP
+  who want to build AI-powered applications on the platform they already know
+- **AI and ML engineers** working in SAP customer environments who need
+  to understand the SAP data layer and how to integrate with it
+- **Technical leads and solution architects** evaluating agentic AI patterns
+  for SAP projects and looking for a production-ready reference architecture
+- **Full-stack developers** who have experimented with LLMs and chatbots
+  and are ready to go beyond simple Q&A into multi-step agentic systems
+- **BTP developers** who want hands-on experience with SAP HANA Cloud's
+  vector engine and SPARQL knowledge graph capabilities
+
+If you work with SAP systems and want to build AI agents that reason over
+your enterprise data — this book is for you.
+
+---
+
+## Who This Book Is NOT For
+
+This book is not the right fit if you are:
+
+- **Looking for a general machine learning or deep learning introduction.**
+  We do not cover neural networks, training models, or ML theory.
+  This book is about applying LLMs to SAP problems, not building LLMs.
+
+- **An ABAP developer with no Python experience.**
+  The agent layer is written in Python. You do not need to be an expert,
+  but you should be comfortable reading and writing basic Python functions,
+  classes, and pip packages before starting Chapter 3.
+
+- **Looking for a no-code or low-code AI solution.**
+  We write real code throughout. Every component is built from first
+  principles so you understand exactly what it does and why.
+
+- **Expecting SAP AI Core as the primary AI backend.**
+  We use Google Vertex AI (Gemini + text-embedding-004) because it is
+  available on the free trial. SAP AI Core is covered in Appendix E
+  for readers who have an enterprise subscription.
+
+- **New to cloud development entirely.**
+  You should be comfortable with the concept of cloud services, REST APIs,
+  and deploying applications. Chapter 2 walks through all the setup steps,
+  but it assumes you have used a terminal before.
+
+---
+
+## Prerequisites
+
+### Technical Knowledge
+
+The following knowledge is assumed. You do not need to be an expert —
+a working familiarity is enough.
+
+| Topic | Level Required | Where to Learn if Needed |
+|-------|---------------|--------------------------|
+| Python | Basic — functions, classes, pip, venv | python.org/about/gettingstarted |
+| JavaScript / Node.js | Basic — enough to read CAP handlers | nodejs.dev/learn |
+| SAP BTP concepts | Familiar — subaccounts, CF, services | learning.sap.com |
+| REST APIs | Basic — HTTP methods, JSON | Any REST API tutorial |
+| SQL | Basic — SELECT, INSERT | W3Schools SQL |
+
+### NOT Required
+
+You do not need prior knowledge of:
+- Machine learning theory or mathematics
+- LangChain or LangGraph (we introduce it from scratch in Chapter 6)
+- RDF, SPARQL, or knowledge graphs (introduced from scratch in Chapter 4)
+- SAP AI Core (covered optionally in Appendix E)
+- ABAP development
+- Docker or Kubernetes
+
+### Tools and Accounts (All Free)
+
+All tools and accounts are free. Chapter 2 walks through every setup step.
+
+| Tool / Account | Purpose | Cost |
+|---------------|---------|------|
+| SAP BTP Trial | Runtime, HANA Cloud, CAP deployment | Free |
+| GCP Account | Vertex AI API (Gemini + embeddings) | Free ($300 credit) |
+| Python 3.11+ | Agent development | Free |
+| Node.js 20+ | CAP frontend development | Free |
+| CF CLI | Deploy to BTP Cloud Foundry | Free |
+| CDS CLI (`@sap/cds-dk`) | CAP development | Free |
+| VS Code | Code editor | Free |
+
+---
+
+## How to Use This Book
+
+### Reading Cover to Cover (Recommended)
+
+Each chapter builds directly on the previous one. The system grows
+chapter by chapter — by Chapter 10 you have a fully deployed, working
+Hybrid RAG Agent on SAP BTP. Reading linearly gives you the full
+progression from concept to production.
+
+### As a Reference
+
+If you already have some of the pieces (a HANA Cloud instance, some
+LangGraph experience), jump to the chapter you need. Each chapter opens
+with a summary of what it assumes you already have from previous chapters.
+
+### Chapter Structure
+
+Every chapter in this book follows the same pattern:
+
+1. **Opening question** — the single question this chapter answers
+2. **Concept** — the idea explained in plain language before any code
+3. **Code** — we build the component step by step
+4. **Explanation** — what each part does and why it is designed that way
+5. **Test** — how to verify it works before moving on
+6. **Summary** — what we built and what comes next
+7. **Checkpoint** — a checklist before starting the next chapter
+
+### The Code
+
+All code is in the companion GitHub repository:
+
+```
+https://github.com/sriramrokkam/agentic-ai-sap-btp-book
+```
+
+Each chapter has a corresponding folder in the repo. If you get stuck,
+the repo has the complete working code for reference.
+
+---
+
+## Conventions Used in This Book
+
+### Code Blocks
+
+```python
+# Python code appears in blocks like this
+def example():
+    return "this is a code example"
+```
+
+```javascript
+// JavaScript/Node.js code looks like this
+const example = () => "this is a code example";
+```
+
+```bash
+# Terminal commands look like this
+cf push my-app
+```
+
+```sql
+-- SQL queries look like this
+SELECT * FROM MY_TABLE;
+```
+
+### Callout Boxes
+
+> **Note:** Additional context or clarification that is helpful but
+> not critical to follow along.
+
+> **Important:** Something you must do or understand before continuing.
+> Skipping this will cause problems later.
+
+> **Warning:** A common mistake or pitfall. Pay attention here.
+
+> **Tip:** A shortcut, best practice, or time-saving suggestion.
+
+### File Paths
+
+File paths are shown relative to the project root:
+- `agents/srv/hdb_srv.py` — the HANA connection service in the agents module
+- `cap-srv/db/schema.cds` — the CDS data model
+
+### Screenshots
+
+Screenshots show the state of the UI at the time of writing. SAP BTP
+and GCP update their interfaces regularly. If a screen looks slightly
+different, the underlying action is the same — use the search or
+navigation to find the equivalent option.
+
+`[SCREENSHOT: description]` markers in this draft will be replaced
+with actual screenshots in the final published version.
+
+---
+
+## Acknowledgements
+
+*[To be added by Sriram Rokkam.]*
+
+*Suggested: colleagues who reviewed chapters, the SAP and Google Cloud
+developer communities, anyone who provided feedback or inspiration.]*
+
+---
+
+## About the Author
+
+**Sriram Rokkam** is a [title] with [X] years of experience building
+enterprise applications on SAP BTP and Google Cloud Platform.
+
+*[Complete this section in your own words — your current role,
+notable projects, SAP community involvement, LinkedIn/GitHub handles.]*
+
+---
+
+*End of Front Matter — Chapter 1 begins on the next page.*

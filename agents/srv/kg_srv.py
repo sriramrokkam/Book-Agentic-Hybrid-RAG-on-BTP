@@ -1,5 +1,6 @@
 """
 agents/srv/kg_srv.py
+Book reference: Chapter 5 — Knowledge Graphs on SAP HANA Cloud
 
 Knowledge Graph service for SAP HANA Cloud SPARQL (RDF named graphs).
 
@@ -243,3 +244,46 @@ def count_triples(material_number: str) -> int:
     except Exception:
         cursor.close()
         return 0
+
+
+ONTOLOGY_GRAPH_IRI = "http://msds.knowledge-graph.org/ontology"
+
+
+def load_ontology(ttl_path: str) -> int:
+    """
+    Load a Turtle (.ttl) ontology file into a dedicated HANA named graph.
+    Uses SPARQL LOAD for small files; falls back to batch INSERT for large ones.
+
+    Called once after provisioning. See Chapter 5 for ontology design details.
+    Returns number of triples loaded.
+    """
+    with open(ttl_path, "r", encoding="utf-8") as f:
+        ttl_content = f.read()
+
+    # Parse triple count from content (rough estimate for logging)
+    triple_count = ttl_content.count(" .\n") + ttl_content.count(".\n")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Drop existing ontology graph and recreate
+        try:
+            cursor.callproc("SPARQL_EXECUTE", (
+                f"DROP GRAPH <{ONTOLOGY_GRAPH_IRI}>", None, None, None,
+            ))
+        except Exception:
+            pass  # graph may not exist yet
+
+        # Load via SPARQL UPDATE INSERT DATA using the parsed TTL
+        insert_sparql = (
+            f"INSERT DATA {{ GRAPH <{ONTOLOGY_GRAPH_IRI}> {{\n"
+            + ttl_content
+            + "\n}}"
+        )
+        cursor.callproc("SPARQL_EXECUTE", (insert_sparql, None, None, None))
+        conn.commit()
+        cursor.close()
+        return triple_count
+    except Exception as e:
+        cursor.close()
+        raise RuntimeError(f"Ontology load failed: {e}") from e

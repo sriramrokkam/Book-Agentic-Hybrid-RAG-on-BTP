@@ -31,7 +31,18 @@ async function agentPost(path, body) {
   return response.json();
 }
 
-async function agentGet(path) {
+async function agentDelete(path) {
+  const fetch = (await import("node-fetch")).default;
+  const response = await fetch(`${AGENT_URL}${path}`, {
+    method: "DELETE",
+    timeout: 30_000,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Agent returned ${response.status}: ${text}`);
+  }
+  return response.json();
+}
   const fetch = (await import("node-fetch")).default;
   const response = await fetch(`${AGENT_URL}${path}`, { timeout: 15_000 });
   if (!response.ok) {
@@ -141,6 +152,17 @@ module.exports = cds.service.impl(async function (srv) {
     return {
       status: result.status,
       materialNumber: result.materialNumber,
+    };
+  });
+
+  // ── deleteDocument action ──────────────────────────────────────────────────
+  srv.on("deleteDocument", "Documents", async (req) => {
+    const { materialNumber } = req.params[0];
+    const result = await agentDelete(`/delete/${materialNumber}`);
+    return {
+      materialNumber: result.materialNumber,
+      vectorsDeleted: result.vectorsDeleted,
+      kgDeleted: result.kgDeleted,
     };
   });
 

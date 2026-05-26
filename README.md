@@ -90,6 +90,13 @@ agentic-hybrid-rag-on-sap-btp/
 
 ---
 
+## Book ↔ Code Cross-Reference
+
+Every source file has a `Book reference:` line in its docstring pointing to
+the chapter that explains it. For the full map see **[docs/CODE_MAP.md](docs/CODE_MAP.md)**.
+
+---
+
 ## Quick Start — Local Development
 
 ### 1. Clone and configure

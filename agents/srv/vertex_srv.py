@@ -1,5 +1,6 @@
 """
 agents/srv/vertex_srv.py
+Book reference: Chapters 4 & 5 — embeddings (Ch4), LLM generation (Ch5)
 
 Vertex AI initialisation, LLM, and embedding model helpers.
 Uses double-checked locking to initialise the SDK exactly once per process.
