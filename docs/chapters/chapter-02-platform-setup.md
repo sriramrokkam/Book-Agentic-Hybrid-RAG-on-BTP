@@ -117,18 +117,24 @@ Under **Additional Features**, verify that **Script Server** and **Document Stor
 
 ### Enabling the Knowledge Graph Engine
 
-The Knowledge Graph (Graph engine) in HANA Cloud is **not enabled by default**. Without it, all SPARQL queries in Chapters 4, 5, 7, and 8 will fail silently.
+The RDF/SPARQL engine in HANA Cloud is the **Triple Store** — and it is not enabled by default. Without it, all SPARQL queries in Chapters 4, 5, 7, and 8 will fail silently. This is the single most common setup mistake.
 
-During the HANA Cloud instance creation wizard, before clicking **Create**:
+**The correct feature to enable is Triple Store — not Document Store.**
 
-1. Scroll down to **Advanced Settings**
-2. Expand the **Additional Features** section
-3. Enable the toggle for **Script Server** (required for stored procedures including SPARQL_EXECUTE)
-4. Enable the toggle for **Document Store** — this activates the Graph engine
+You can enable it on a running instance at any time — no delete or recreate required. In HANA Cloud Central:
 
-> **Critical:** If you already created your HANA Cloud instance without enabling these features, you must either delete and recreate the instance, or contact SAP Support to enable them on an existing instance. There is no way to enable the Graph engine on a running instance via the Cockpit.
+1. Click your instance name → the dropdown chevron next to the instance name → **Manage Configuration**
+2. Select the **Advanced Settings** tab
+3. Under **Additional Features**, check **Triple Store**
+4. Optionally check **Script Server** if you plan to use other stored procedures
+5. Click **Save** — HANA Cloud applies the change without downtime
 
-*Screenshot pending: HANA Cloud instance creation wizard — Advanced Settings panel showing the additional features toggles. See task #29 for verified steps.*
+![HANA Cloud Advanced Settings — Triple Store](docs/screenshots/hana/hana-advanced-settings-triple-store.png)
+*Figure 2.x — HANA Cloud Central → your instance → Manage Configuration → Advanced Settings. Enable Triple Store (the RDF/SPARQL engine). Script Server is separate. Document Store is for JSON documents — not required for this book.*
+
+> **Important:** The info banner on this screen says "Adding features to an instance may require more memory and increase your licensing cost." On a trial instance, enabling Triple Store is free within the trial allocation. Monitor your CU usage in HANA Cloud Central if you are concerned.
+
+> **Note:** Natural Language Processing (NLP) is shown as enabled in the screenshot above — that is from a separate training instance. You do not need NLP enabled for this book.
 
 ### Getting Your HANA Connection Details
 
