@@ -182,10 +182,11 @@ Save these:
 
 Go to `cloud.google.com/free` and click **Get started for free**.
 
-*[Screenshot: Google Cloud Free Trial page at cloud.google.com/free — click "Get started for free" to claim your $300 credit]*
-*Figure: Google Cloud free tier page — click "Get started for free" to claim your $300 credit*
+Sign in with your Google account.
 
-Sign in with your Google account. GCP will ask for a credit card for identity verification — **you will not be charged** during the free trial, and the $300 credit covers everything in this book many times over.
+> **Important — Credit Card Required:** GCP will ask for credit card details during signup for identity verification. A charge will not be made immediately, but a card is mandatory to activate the $300 free credit. Read GCP's terms and conditions carefully before proceeding — billing behaviour, credit expiry, and auto-upgrade conditions are your responsibility to understand.
+
+> **Caution — Use Your $300 Credit Wisely:** The exercises in this book are well within the $300 free credit — typical usage for the full project (embeddings, Gemini API calls, SPARQL generation) costs a few dollars at most. However, once you complete this project, **delete your GCP project and suspend or close your GCP account within 90 days**. An idle project with APIs enabled can accrue unexpected charges. Cleaning up after the exercise is not optional — it is good practice. Steps to delete your project are in Appendix B. Managing your GCP account beyond this book's exercises is outside the scope of this book.
 
 After signup, you will land on the **GCP Console**.
 
