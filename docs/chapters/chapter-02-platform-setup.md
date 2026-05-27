@@ -201,23 +201,14 @@ Enabling the API takes about 30 seconds. Once enabled, you will see the Vertex A
 
 ### GCP Authentication — What Actually Works
 
-Before creating a service account, you need to understand a critical GCP policy change that affects most accounts.
-
-> **Warning — Service Account Key Creation May Be Blocked:** Since May 3, 2024, GCP enforces `iam.disableServiceAccountKeyCreation` by default on all new organisations. If you are using a corporate Google account, this policy is almost certainly active — clicking **Add Key** will return the error "Service account key creation is disabled." This is by design. GCP's own documentation states: *"Service account keys are a security risk if not managed correctly. Choose a more secure alternative whenever possible."*
->
-> Official GCP reference: `cloud.google.com/iam/docs/keys-create-delete`
-
-![Service Account Key Disabled](docs/screenshots/gcp/service-account-key-disabled.png)
-*Figure 2.x — GCP blocks service account key creation under the `iam.disableServiceAccountKeyCreation` org policy, enforced by default since May 2024.*
-
-**Use a personal Google account for this book.** Sign up at `cloud.google.com/free` with a personal Gmail — not your corporate Google Workspace account. Personal free-tier accounts are not subject to corporate org policies and allow the authentication approach described below.
+**Use a personal Google account for this book.** Sign up at `cloud.google.com/free` with a personal Gmail — not your corporate Google Workspace account. Corporate GCP organisations typically block service account key creation via org policy, which will prevent the steps below from working.
 
 This book uses two authentication approaches depending on context:
 
 | Context | Method |
 |---------|--------|
 | Local development (Chapters 2–9) | Application Default Credentials via `gcloud` CLI |
-| BTP Cloud Foundry deployment (Chapter 10) | API Key stored as CF environment variable |
+| BTP Cloud Foundry deployment (Chapter 10) | Service account JSON key via BTP Destination Service |
 
 ### Creating a Service Account
 
