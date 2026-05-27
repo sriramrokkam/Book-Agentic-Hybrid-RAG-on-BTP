@@ -12,7 +12,7 @@ This chapter introduces LangGraph from first principles. We build a simple quest
 
 ## 6.1 Why LangGraph is SAP's recommended orchestration approach for BTP agents
 
-Enterprise AI governance requires more than a correct answer. It requires an auditable trail: which system provided which data, which decision was made at which step, and why. When an auditor asks "how did the system determine that the exposure limit was 500 ppm?", you need to be able to show the SPARQL query, the HANA result, and the LLM call that synthesised it into natural language. A black-box chain gives you none of that. A LangGraph StateGraph gives you all of it.
+Enterprise AI governance requires more than a correct answer. It requires an auditable trail: which system provided which data, which decision was made at which step, and why. When an auditor asks "how did the system determine that the tensile test used ISO 6892-1?", you need to be able to show the SPARQL query, the HANA result, and the LLM call that synthesised it into natural language. A black-box chain gives you none of that. A LangGraph StateGraph gives you all of it.
 
 LangGraph models your agent as a directed graph rather than a list. Every node in the graph is a named Python function. Every state transition is an explicit edge. Every intermediate result is captured in the graph state. LangGraph traces can be exported to LangSmith, where each run shows a complete tree: which nodes executed, in what order, what the state contained at each step, and the exact prompts sent to Gemini. This execution trace is the enterprise AI governance artefact.
 

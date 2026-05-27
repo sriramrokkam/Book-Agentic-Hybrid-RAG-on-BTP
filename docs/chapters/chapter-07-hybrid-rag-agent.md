@@ -188,12 +188,12 @@ SPARQL_GEN_PROMPT = """You are a SPARQL expert. Generate a SPARQL SELECT query t
 the question below using the provided ontology.
 
 Ontology predicates available:
-- msds:hasHazardCode (links Material to HazardCode)
-- msds:hasExposureLimit (links Material to ExposureLimit, has msds:limitValue and msds:limitUnit)
-- msds:requiresPrecaution (links Material to Precaution, has msds:precautionText)
-- msds:hasSupplier (links Material to Supplier)
-- msds:hazardDescription (literal on HazardCode)
-- rdfs:label (name of the material)
+- msds:certifiedBy (links Batch to certifying organisation node)
+- msds:testResult (links Batch to TestResult, has msds:testMethod and msds:resultValue)
+- msds:certificateNumber (literal on Batch — e.g. QC-CERT-44781)
+- msds:certifyingLab (links Batch to laboratory node)
+- msds:description (literal description on any node)
+- rdfs:label (name of the material or batch)
 
 Named graph: <{graph_uri}>
 Material URI: <http://msds.knowledge-graph.org/material/{material_number}>
@@ -577,7 +577,7 @@ Content-Type: application/json
 // Response
 {
   "answer": "The tensile test used ISO 6892-1 methodology with 450 MPa yield strength and 22% elongation at break.",
-  "kg_sparql": "PREFIX msds: <...>\nSELECT ?code ?desc WHERE { GRAPH <...> { <...BATCH-QC-MAT-001> msds:hasHazardCode ?hc . ?hc rdfs:label ?code . ?hc msds:hazardDescription ?desc } }",
+  "kg_sparql": "PREFIX msds: <...>\nSELECT ?node ?value WHERE { GRAPH <...> { <...BATCH-QC-MAT-001> msds:testResult ?node . ?node msds:testMethod ?value } }",
   "kg_facts": [
     "('ISO 6892-1', 'Tensile test standard')",
     "('450 MPa', 'Yield strength')",

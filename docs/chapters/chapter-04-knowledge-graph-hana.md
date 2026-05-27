@@ -48,14 +48,14 @@ Read those rows. You have just read a Knowledge Graph. Each row is a fact about 
 
 Because if you draw it, it looks like one. Subjects and objects are nodes; predicates are edges. The same certifying lab "Bureau Veritas Testing GmbH" might be the object of many batches' `certifiedBy` edges. The same certificate number might appear in many audit queries. The graph emerges naturally from shared values.
 
-![Knowledge Graph Node: Acetone](docs/screenshots/diagrams/01-kg-acetone-node.png)
+![Knowledge Graph Node: Batch Quality Certificate](docs/screenshots/diagrams/01-kg-acetone-node.png)
 *Figure: RDF Knowledge Graph representation of a Batch Quality Certificate — four triples extracted from a single document, stored as a named graph in SAP HANA Cloud*
 
 ### What does this give us that a relational schema does not?
 
 Three things, in order of how much you will care:
 
-1. **No schema changes when facts evolve.** Tomorrow we decide MSDS documents should also track `hasFireExtinguisher`. We do not run a `DDL` migration; we just start storing triples with that predicate. The graph is permissive about what relationships exist.
+1. **No schema changes when facts evolve.** Tomorrow we decide batch certificates should also track `hasReTestDate`. We do not run a `DDL` migration; we just start storing triples with that predicate. The graph is permissive about what relationships exist.
 2. **Queries that follow paths.** "Find me every material whose supplier is in Missouri" — that is a graph traversal. SPARQL expresses it directly. In SQL it would be a chain of joins.
 3. **Identity by IRI.** Every node has a globally unique IRI (a URL-shaped identifier). This means a triple in our system can refer to the same material node that any other system uses, simply by sharing an IRI.
 

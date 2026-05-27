@@ -42,29 +42,29 @@ The supervisor does not answer the question. It only decomposes and routes. This
 
 ---
 
-## 8.3 The three specialist agents for MSDS documents
+## 8.3 The three specialist agents for material documents
 
-For MSDS documents, the domain decomposition maps naturally to three specialist agents. Each agent uses a different retrieval strategy because each domain has a different knowledge representation:
+For material quality documents, the domain decomposition maps naturally to three specialist agents. Each agent uses a different retrieval strategy because each domain has a different knowledge representation:
 
 ### 8.3.1 HazardAgent
 
-**Domain:** GHS classifications, hazard codes, hazard statements, signal words.
-**Retrieval strategy:** Knowledge graph — structured facts from `hasHazardCode` and `hazardDescription` predicates in `MSDS_Graph/MAT-XXX`.
-**Strength:** Returns exact codes (H225, H319, H336) and their official descriptions directly from structured triples — no ambiguity, no narrative interpretation.
+**Domain:** Test methods, test results, certificate identifiers, certifying laboratory.
+**Retrieval strategy:** Knowledge Graph — structured facts from `testResult`, `certifiedBy`, `certificateNumber`, and `certifyingLab` predicates in `MSDS_Graph/MAT-XXX`.
+**Strength:** Returns exact test results and certificate identifiers directly from structured triples — no ambiguity, no narrative interpretation.
 
 ### 8.3.2 SafetyAgent
 
-**Domain:** Precautions, first aid procedures, PPE requirements, storage and handling instructions.
-**Retrieval strategy:** Vector search — narrative text from Sections 4, 7, and 8 of the MSDS.
+**Domain:** Storage conditions, handling requirements, delivery instructions, inspection procedures.
+**Retrieval strategy:** Vector search — narrative text from the delivery, storage, and handling sections of the batch certificate.
 **Strength:** Returns detailed procedural instructions that live in prose and are not easily reduced to structured triples. The vector store retrieves the specific paragraphs that answer the question.
 
 ### 8.3.3 ComplianceAgent
 
-**Domain:** Regulatory requirements, exposure limits, permissible concentrations, legal obligations.
-**Retrieval strategy:** Both KG and vector — structured exposure limits from `hasExposureLimit` predicates, combined with narrative regulatory context from the vector store.
-**Strength:** Handles questions that span structured facts (the OSHA limit is 500 ppm TWA) and regulatory narrative (what that limit means and how to comply with it).
+**Domain:** Acceptance criteria, specification tolerances, quality hold conditions, regulatory thresholds.
+**Retrieval strategy:** Both Knowledge Graph and vector — structured pass/fail results from `testResult` predicates, combined with narrative specification context from the vector store.
+**Strength:** Handles questions that span structured facts (the yield strength result is 450 MPa) and specification narrative (what the acceptance range is and whether it passes).
 
-These three agents are MSDS-specific instances of a general pattern. The same supervisor architecture deployed for purchase order documents would have different specialists: a HeaderAgent for invoice metadata, a LineItemAgent for line item details, a PaymentAgent for payment terms and status. The routing logic, the state machine, and the merge mechanism are identical. Only the specialist prompts and the KG predicates they query change.
+These three agents are instances of a general pattern. The same supervisor architecture deployed for purchase order documents would have different specialists: a HeaderAgent for invoice metadata, a LineItemAgent for line item details, a PaymentAgent for payment terms and status. The routing logic, the state machine, and the merge mechanism are identical. Only the specialist prompts and the Knowledge Graph predicates they query change.
 
 ---
 
@@ -98,7 +98,7 @@ class SupervisorState(TypedDict):
     error: Optional[str]
 ```
 
-The `sub_questions` dictionary maps specialist names to the focused questions the supervisor generated for them. `specialists_needed` is the list of specialists the supervisor decided to invoke — not every question needs all three. A question purely about GHS codes routes only to HazardAgent. A question about storage and compliance routes to SafetyAgent and ComplianceAgent.
+The `sub_questions` dictionary maps specialist names to the focused questions the supervisor generated for them. `specialists_needed` is the list of specialists the supervisor decided to invoke — not every question needs all three. A question purely about test results routes only to HazardAgent. A question about storage conditions and acceptance criteria routes to SafetyAgent and ComplianceAgent.
 
 ---
 
@@ -212,8 +212,8 @@ def _make_chain_state(sub_question: str, state: SupervisorState) -> HybridRAGSta
     }
 
 def hazard_agent(state: SupervisorState) -> dict:
-    """KG-focused: GHS codes, classifications, hazard statements.
-    Structured hazard data lives in the Knowledge Graph as precise triples."""
+    """KG-focused: test methods, test results, certificate identifiers.
+    Structured test data lives in the Knowledge Graph as precise triples."""
     sub_q = state["sub_questions"].get("hazard", state["question"])
     chain_state = _make_chain_state(sub_q, state)
     result = run_kg_chain(chain_state)
@@ -225,8 +225,8 @@ def hazard_agent(state: SupervisorState) -> dict:
     return {"hazard_answer": answer}
 
 def compliance_agent(state: SupervisorState) -> dict:
-    """KG-focused with vector fallback: exposure limits, regulatory thresholds.
-    Structured limits come from the KG; regulatory narrative comes from vector search."""
+    """KG-focused with vector fallback: acceptance criteria, specification tolerances.
+    Structured limits come from the KG; specification narrative comes from vector search."""
     sub_q = state["sub_questions"].get("compliance", state["question"])
     chain_state = _make_chain_state(sub_q, state)
     result = run_kg_chain(chain_state)
@@ -237,8 +237,8 @@ def compliance_agent(state: SupervisorState) -> dict:
     return {"compliance_answer": answer}
 
 def safety_agent(state: SupervisorState) -> dict:
-    """Vector-focused: precautions, first aid, PPE, storage procedures.
-    Narrative safety procedures live in document prose — vector search retrieves them."""
+    """Vector-focused: storage conditions, handling instructions, delivery requirements.
+    Narrative procedures live in document prose — vector search retrieves them."""
     sub_q = state["sub_questions"].get("safety", state["question"])
     chain_state = _make_chain_state(sub_q, state)
     result = run_vector_chain(chain_state)
@@ -369,10 +369,10 @@ The supervisor adds latency — one extra LLM call for routing and one for synth
 
 | Question type | Recommended agent | Why |
 |---|---|---|
-| Single-domain factual ("what are the hazard codes?") | Direct hybrid RAG (Ch 7) | Faster, no routing overhead |
-| Single-domain narrative ("what is the first aid?") | Direct hybrid RAG (Ch 7) | Faster, single retrieval pass is sufficient |
-| Multi-domain factual + narrative ("codes AND precautions") | Supervisor | Each domain gets focused retrieval |
-| Complex regulatory + safety question | Supervisor | Prevents context dilution |
+| Single-domain factual ("what is the test result?") | Direct hybrid RAG (Ch 7) | Faster, no routing overhead |
+| Single-domain narrative ("what are the storage conditions?") | Direct hybrid RAG (Ch 7) | Faster, single retrieval pass is sufficient |
+| Multi-domain factual + narrative ("test results AND storage requirements") | Supervisor | Each domain gets focused retrieval |
+| Complex specification + delivery question | Supervisor | Prevents context dilution |
 | Real-time chat interface | Direct hybrid RAG (Ch 7) | Latency matters in chat |
 | Batch compliance reports | Supervisor | Quality matters more than speed |
 
