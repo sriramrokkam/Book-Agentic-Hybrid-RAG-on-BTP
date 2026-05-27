@@ -128,7 +128,7 @@ During the HANA Cloud instance creation wizard, before clicking **Create**:
 
 > **Critical:** If you already created your HANA Cloud instance without enabling these features, you must either delete and recreate the instance, or contact SAP Support to enable them on an existing instance. There is no way to enable the Graph engine on a running instance via the Cockpit.
 
-*[Screenshot: HANA Cloud creation wizard — Advanced Settings panel with Script Server and Document Store toggles enabled]*
+*Screenshot pending: HANA Cloud instance creation wizard — Advanced Settings panel showing the additional features toggles. See task #29 for verified steps.*
 
 ### Getting Your HANA Connection Details
 
@@ -163,8 +163,7 @@ Sign in with your Google account.
 
 After signup, you will land on the **GCP Console**.
 
-*[Screenshot: Google Cloud Console — project selector in top navigation bar, Vertex AI API enabled]*
-*Figure: Google Cloud Console — your project selector appears in the top navigation bar*
+*Screenshot pending: GCP Console home page showing the project selector in the top navigation bar and Vertex AI API enabled.*
 
 ### Creating a New Project
 
@@ -294,8 +293,7 @@ This is the SAP-native way to manage external service credentials, and it is an 
 
 In the BTP Cockpit, go to your trial subaccount → **Connectivity** → **Destinations** → **New Destination**.
 
-*[Screenshot: BTP Cockpit → Connectivity → Destinations — click "New Destination" to create the Vertex AI destination]*
-*Figure: BTP Connectivity → Destinations — click "New Destination" to create the Vertex AI destination*
+*Screenshot pending: BTP Cockpit → Connectivity → Destinations — the New Destination button and the configured VertexAI destination entry.*
 
 Fill in the destination configuration:
 
