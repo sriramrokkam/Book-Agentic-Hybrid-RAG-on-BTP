@@ -1,10 +1,12 @@
 # Chapter 7: The Parallel Hybrid RAG Agent
 
+SAP HANA Cloud is the only enterprise database that provides both REAL_VECTOR cosine similarity search and native SPARQL execution in a single managed service on BTP. This chapter shows how to use both simultaneously.
+
 In Chapter 6 we built a LangGraph agent with a stub retriever — a placeholder that returned a fixed string instead of real data. In Chapters 3 and 4 we built the real retrieval systems: a vector store in SAP HANA Cloud and a knowledge graph queried via SPARQL. In Chapter 5 we built the ingestion pipeline that populates both. All the pieces exist. This chapter assembles them.
 
 The central design question is: when a user asks a question, do we run vector search first and knowledge graph search second? Or do we ask the LLM to decide which one to use? The answer to both is no. We run them in parallel, always, regardless of the question. This chapter explains why that decision is correct and shows you exactly how to implement it.
 
-By the end of this chapter you will have a working hybrid RAG system: a FastAPI service that receives a natural language question, dispatches it simultaneously to both retrieval chains, merges the results, and returns an answer that demonstrably outperforms either strategy alone.
+By the end of this chapter you will have a working hybrid RAG system: a FastAPI service that receives a natural language question about any PDF document linked to an SAP Material Number, dispatches it simultaneously to both retrieval chains, merges the results, and returns an answer that demonstrably outperforms either strategy alone.
 
 ---
 
@@ -19,10 +21,10 @@ Consider the naive approach: run vector search, check the result, then decide wh
 | Routing: LLM decides which to use | 1 s + 2 s = 3 s | 2 | Routing LLM skips useful path |
 | **Parallel: both simultaneously** | **max(2 s, 2 s) = 2 s** | **2** | **None** |
 
-The parallel approach is faster than all sequential variants and uses fewer LLM calls than the routing variant. More importantly, it eliminates the routing error entirely. A routing LLM might decide that "what are the GHS codes for acetone?" is a structured query and skip the vector chain — missing the handling instructions that live only in prose. By always running both, we guarantee that no retrieval path is skipped.
+The parallel approach is faster than all sequential variants and uses fewer LLM calls than the routing variant. More importantly, it eliminates the routing error entirely. A routing LLM might decide that "what are the GHS codes for acetone?" is a structured query and skip the vector chain — missing the handling instructions that live only in prose. By always running both, we guarantee that no retrieval path is skipped. For enterprise systems where completeness matters — a safety officer needs all relevant information, not just what the system guesses is most relevant — this deterministic behaviour is non-negotiable.
 
 ![Parallel Orchestrator Architecture](docs/screenshots/diagrams/08-parallel-orchestrator.png)
-*Figure: The parallel hybrid RAG orchestrator — both chains run concurrently via ThreadPoolExecutor. Wall-clock latency equals the slower of the two chains, not their sum.*
+*Figure 7.1: The parallel hybrid RAG orchestrator — both chains run concurrently via ThreadPoolExecutor(max_workers=2). Wall-clock latency equals the slower of the two chains, not their sum.*
 
 > **Note:** This design assumes both chains have roughly similar latency (~1–3 seconds each). If one chain were orders of magnitude slower than the other, you might reconsider. In practice, a HANA SPARQL query and a HANA vector search take comparable time.
 
@@ -60,6 +62,8 @@ class HybridRAGState(TypedDict):
 
 This state is the contract between every component in the system. The vector chain writes to `vector_answer` and `vector_chunks`. The KG chain writes to `kg_answer`, `kg_sparql`, and `kg_facts`. The merge function reads all four and writes `final_answer`.
 
+The `sources` field serves a specific enterprise purpose: auditability. When the CAP Fiori UI displays an answer, it also shows the user which retrieval paths contributed — "Knowledge graph: 3 facts, Document search: 5 passages". This tells the user whether the answer is grounded in structured facts from the KG, in narrative passages from the vector store, or in both. For regulated industries where answer provenance must be demonstrable, this field is not optional.
+
 ---
 
 ## 7.3 The vector chain
@@ -69,7 +73,7 @@ Create `agents/agents/vector_chain.py`:
 ```python
 import logging
 from typing import Optional
-from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_core.messages import HumanMessage
 
 from agents.state import HybridRAGState
@@ -77,8 +81,11 @@ from srv.hdb_srv import get_connection
 
 logger = logging.getLogger(__name__)
 
-_llm = ChatVertexAI(model_name="gemini-1.5-pro", temperature=0.1, max_tokens=1024)
-_embedder = VertexAIEmbeddings(model_name="text-embedding-004")
+def _get_llm():
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1, max_tokens=1024)
+
+def _get_embedder():
+    return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
 COSINE_SEARCH_SQL = """
 SELECT TOP 5
@@ -98,7 +105,7 @@ def run_vector_chain(state: HybridRAGState) -> dict:
 
     try:
         # Step 1: Embed the question
-        embedding = _embedder.embed_query(question)
+        embedding = _get_embedder().embed_query(question)
         embedding_str = "[" + ",".join(str(v) for v in embedding) + "]"
 
         # Step 2: Cosine search in HANA
@@ -124,10 +131,9 @@ def run_vector_chain(state: HybridRAGState) -> dict:
             for row in rows
         ]
 
-        # Step 3: Summarise with Gemini
+        # Step 3: Summarise with Gemini 2.5 Flash
         context = "\n\n---\n\n".join(c["text"] for c in chunks)
-        prompt = f"""You are an expert in material safety. Use the following passages
-from an MSDS document to answer the question. Be specific and concise.
+        prompt = f"""You are an expert assistant for SAP material documents — answer questions based only on the provided document context. Be specific and concise.
 If the passages do not contain enough information, say so.
 
 Passages:
@@ -137,7 +143,7 @@ Question: {question}
 
 Answer:"""
 
-        response = _llm.invoke([HumanMessage(content=prompt)])
+        response = _get_llm().invoke([HumanMessage(content=prompt)])
         return {
             "vector_answer": response.content,
             "vector_chunks": chunks,
@@ -152,7 +158,7 @@ Answer:"""
         }
 ```
 
-Three steps: embed the question into a 768-dimensional vector, run a cosine similarity search against `MSDS_VECTORS`, summarise the top-5 matching chunks with Gemini. The SQL uses HANA's `COSINE_SIMILARITY` function and `TO_REAL_VECTOR` to cast the embedding string to the correct column type.
+Three steps: embed the question into a 768-dimensional vector using `text-embedding-004`, run a cosine similarity search against `MSDS_VECTORS`, summarise the top-5 matching chunks with Gemini 2.5 Flash. The SQL uses HANA's `COSINE_SIMILARITY` function and `TO_REAL_VECTOR` to cast the embedding string to the correct column type.
 
 ---
 
@@ -162,7 +168,7 @@ Create `agents/agents/kg_chain.py`:
 
 ```python
 import logging
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
 from agents.state import HybridRAGState
@@ -170,8 +176,11 @@ from srv.hdb_srv import get_connection
 
 logger = logging.getLogger(__name__)
 
-_llm = ChatVertexAI(model_name="gemini-1.5-pro", temperature=0.0, max_tokens=512)
-_summariser = ChatVertexAI(model_name="gemini-1.5-pro", temperature=0.1, max_tokens=1024)
+def _get_llm():
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.0, max_tokens=512)
+
+def _get_summariser():
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1, max_tokens=1024)
 
 GRAPH_URI_PREFIX = "http://msds.knowledge-graph.org/MSDS_Graph/"
 
@@ -231,7 +240,7 @@ def run_kg_chain(state: HybridRAGState) -> dict:
             material_number=material_number,
             question=question,
         )
-        sparql_response = _llm.invoke([HumanMessage(content=gen_prompt)])
+        sparql_response = _get_llm().invoke([HumanMessage(content=gen_prompt)])
         sparql = sparql_response.content.strip()
         # Strip markdown code fences if present
         if sparql.startswith("```"):
@@ -247,7 +256,7 @@ def run_kg_chain(state: HybridRAGState) -> dict:
                 graph_uri=graph_uri,
                 material_number=material_number,
             )
-            fallback_response = _llm.invoke([HumanMessage(content=fallback_prompt)])
+            fallback_response = _get_llm().invoke([HumanMessage(content=fallback_prompt)])
             sparql = fallback_response.content.strip()
             if sparql.startswith("```"):
                 sparql = "\n".join(sparql.split("\n")[1:-1])
@@ -260,12 +269,11 @@ def run_kg_chain(state: HybridRAGState) -> dict:
                 "kg_facts": [],
             }
 
-        # Step 4: Summarise with Gemini
+        # Step 4: Summarise with Gemini 2.5 Flash
         facts = [str(row) for row in rows]
         facts_text = "\n".join(facts[:50])  # limit to 50 facts
 
-        summarise_prompt = f"""You are an expert in material safety. The following facts were
-retrieved from a structured knowledge graph about material {material_number}.
+        summarise_prompt = f"""You are an expert assistant for SAP material documents — answer questions based only on the provided document context. The following facts were retrieved from a structured knowledge graph about material {material_number}.
 Use them to answer the question precisely.
 
 Facts:
@@ -275,7 +283,7 @@ Question: {question}
 
 Answer:"""
 
-        summary_response = _summariser.invoke([HumanMessage(content=summarise_prompt)])
+        summary_response = _get_summariser().invoke([HumanMessage(content=summarise_prompt)])
         return {
             "kg_answer": summary_response.content,
             "kg_sparql": sparql,
@@ -300,7 +308,15 @@ The KG chain has one critical feature beyond basic SPARQL execution: the retry-o
 
 ## 7.5 The merge function
 
-The merge function is the heart of hybrid RAG. It receives whatever the two chains produced and decides how to combine them.
+The merge function is the heart of hybrid RAG. It receives whatever the two chains produced and decides how to combine them. The four cases map directly to enterprise answer quality tiers:
+
+**Both chains return results** — comprehensive answer. The KG provides structured facts (exact codes, measured values, regulatory identifiers); the vector store provides narrative context (procedures, explanations, warnings in prose). A synthesis LLM call combines them: KG facts take precedence for specific codes and numbers, vector passages fill in the procedural detail. This is the highest-quality answer.
+
+**Only the KG returns results** — precise factual answer. The structured facts are returned directly, without a synthesis call. No prose padding. The answer says exactly what the KG says, no more.
+
+**Only the vector store returns results** — narrative context answer. The document passages are summarised and returned. No specific codes are asserted beyond what appears in the text.
+
+**Neither returns results** — honest gap acknowledgement. The system says it cannot find information and instructs the user to verify the material number or rephrase. It does not hallucinate. This honest-gap behaviour is critical for enterprise trust: a system that occasionally says "I don't know" is far more trustworthy than one that always produces an answer, even when the answer is fabricated.
 
 ```python
 def merge_results(
@@ -308,7 +324,7 @@ def merge_results(
     vector_answer: str,
     question: str,
     material_number: str,
-    llm: ChatVertexAI,
+    llm,
 ) -> str:
     """
     Merge KG and vector answers into a final response.
@@ -323,7 +339,7 @@ def merge_results(
     has_vec = bool(vector_answer and vector_answer.strip())
 
     if has_kg and has_vec:
-        synthesis_prompt = f"""You are an expert in material safety.
+        synthesis_prompt = f"""You are an expert assistant for SAP material documents.
 You have received answers from two independent retrieval systems for the question below.
 
 Structured Knowledge Graph answer:
@@ -352,13 +368,11 @@ Answer:"""
 
     else:
         return (
-            f"I could not find specific information about your question in the available "
-            f"MSDS documents for material {material_number}. Please verify the material "
+            f"No relevant information found for your question in the available "
+            f"documents for material {material_number}. Please verify the material "
             f"number or rephrase your question."
         )
 ```
-
-Four cases, handled explicitly. When both chains return results, a third Gemini call synthesises them — preferring the KG answer for precise facts and the vector answer for narrative context. When only one chain returns results, we return it directly without the overhead of a synthesis call. When neither chain returns results, we return a clear, actionable error message rather than hallucinating.
 
 ---
 
@@ -369,7 +383,7 @@ Create `agents/agents/orchestrator.py`:
 ```python
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
 from agents.state import HybridRAGState
@@ -378,7 +392,8 @@ from agents.kg_chain import run_kg_chain
 
 logger = logging.getLogger(__name__)
 
-_llm = ChatVertexAI(model_name="gemini-1.5-pro", temperature=0.1, max_tokens=1024)
+def _get_llm():
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1, max_tokens=1024)
 
 CHAIN_TIMEOUT_SECONDS = 30
 
@@ -388,7 +403,7 @@ def merge_results(kg_answer: str, vector_answer: str,
     has_vec = bool(vector_answer and vector_answer.strip())
 
     if has_kg and has_vec:
-        prompt = f"""You are an expert in material safety.
+        prompt = f"""You are an expert assistant for SAP material documents.
 Two retrieval systems answered the same question. Synthesise their answers.
 
 Knowledge Graph:
@@ -401,10 +416,10 @@ Question: {question}
 
 Synthesise into one coherent answer. Prefer KG for exact codes/limits.
 Answer:"""
-        return _llm.invoke([HumanMessage(content=prompt)]).content
+        return _get_llm().invoke([HumanMessage(content=prompt)]).content
 
     return kg_answer or vector_answer or (
-        f"No information found for material {material_number}. "
+        f"No relevant information found for material {material_number}. "
         "Please verify the material number or rephrase your question."
     )
 
@@ -449,7 +464,7 @@ def run_hybrid_rag(state: HybridRAGState) -> dict:
     )
     merged_state["final_answer"] = final_answer
 
-    # Build sources list
+    # Build sources list for auditability
     sources = []
     if merged_state.get("vector_chunks"):
         sources.append(f"Document search: {len(merged_state['vector_chunks'])} passages")
@@ -463,6 +478,8 @@ def run_hybrid_rag(state: HybridRAGState) -> dict:
 The orchestrator submits both chains to a `ThreadPoolExecutor` with `max_workers=2` and collects results as they complete. The `as_completed()` call returns futures in completion order — whichever chain finishes first is processed first. The 30-second timeout prevents a slow chain from blocking the response indefinitely.
 
 > **Note:** We use `as_completed()` rather than `executor.map()` because we want to process results as soon as they arrive, not wait for all to finish. If the vector chain finishes in 1.5 seconds and the KG chain takes 3 seconds, the orchestrator captures the vector result at 1.5 seconds and the KG result at 3 seconds, then merges at ~3 seconds total.
+
+The `sources` field populated at the end is the auditability record. The CAP Fiori UI surfaces this to the user — showing whether the answer was grounded in structured knowledge graph facts, in retrieved document passages, or in both. An enterprise user reviewing an AI-generated answer needs to know where it came from.
 
 ---
 
@@ -574,7 +591,7 @@ Content-Type: application/json
 }
 ```
 
-The response includes both the synthesised answer and the raw retrieval evidence (`kg_facts`, `vector_chunks`, `kg_sparql`). The Fiori UI uses these to show the user exactly where the answer came from — which SPARQL query retrieved the structured facts, and which document passages supported the narrative answer.
+The response includes both the synthesised answer and the raw retrieval evidence (`kg_facts`, `vector_chunks`, `kg_sparql`). The Fiori UI uses the `sources` field to show the user exactly where the answer came from — which SPARQL query retrieved the structured facts, and which document passages supported the narrative answer.
 
 ---
 
@@ -601,21 +618,23 @@ POST /query
 
 The answer node in the LangGraph graph includes the history in its prompt, so the second question gets a contextually aware answer ("Given the flammability hazard H225 that we discussed, you should wear...") without any server-side state.
 
-The frontend keeps a rolling window of the last 10 messages — enough for conversational context without ballooning the prompt. Older messages are silently dropped.
+The CAP Fiori frontend keeps a rolling window of the last 10 messages — enough for conversational context without ballooning the prompt. Older messages are silently dropped.
 
 ---
 
 ## 7.10 Testing: three scenarios that prove hybrid wins
 
-The following three test cases demonstrate why hybrid retrieval is better than either strategy alone. Run them after uploading the acetone MSDS to both stores.
+The following three test cases demonstrate why hybrid retrieval is better than either strategy alone. Each scenario reflects a real role in an SAP-using organisation asking a real question against an MSDS document for acetone (MAT-001). Run them after uploading the acetone MSDS to both stores.
 
-### 7.10.1 The KG wins: precise structured facts
+### 7.10.1 The KG wins: a safety officer asks about hazard classifications
+
+A safety officer asks: "What are the GHS hazard codes for acetone, and what do they mean?"
 
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What are the GHS hazard codes for acetone?",
+    "question": "What are the GHS hazard codes for acetone, and what do they mean?",
     "material_number": "ACE001",
     "history": []
   }'
@@ -633,23 +652,27 @@ sheet indicates it is a highly flammable substance with eye irritation
 properties. Refer to Section 2 for complete hazard identification...
 ```
 
-The KG returns the exact codes. The vector chain returns useful prose but buries the codes in a paragraph. The synthesised answer leads with the codes and adds the prose context.
+The KG returns the exact codes and their official descriptions from structured triples. The vector chain returns useful prose but buries the codes in a paragraph. The synthesised answer leads with the codes and their meanings from the KG, then adds the narrative context from the vector store. The safety officer gets a complete, citable answer.
 
-### 7.10.2 The vector wins: narrative safety procedures
+### 7.10.2 The vector wins: a quality engineer asks about first aid procedures
+
+A quality engineer asks: "What first aid should I give if someone inhales acetone vapour in our lab?"
 
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What first aid should I give if someone inhales acetone vapour?",
+    "question": "What first aid should I give if someone inhales acetone vapour in our lab?",
     "material_number": "ACE001",
     "history": []
   }'
 ```
 
-The KG stores structured facts — hazard codes, exposure limits, precaution flags. It does not store the detailed first-aid procedure paragraph. The vector chain retrieves the exact passage from Section 4 of the MSDS. The final answer comes primarily from the vector chain here, with the KG contributing the exposure limit for context.
+The KG stores structured facts — hazard codes, exposure limits, precaution flags. It does not store the detailed first-aid procedure paragraph from Section 4 of the MSDS. The vector chain retrieves the exact passage. The final answer comes primarily from the vector chain, with the KG contributing the exposure limit context. The quality engineer gets the procedural instructions they actually need.
 
-### 7.10.3 Both contribute: a complex combined question
+### 7.10.3 Both contribute: a logistics manager asks a combined question
+
+A logistics manager asks: "Is acetone classified as a flammable liquid, and what precautions should I take when storing it in our warehouse?"
 
 ```bash
 curl -X POST http://localhost:8000/query \
@@ -661,7 +684,7 @@ curl -X POST http://localhost:8000/query \
   }'
 ```
 
-The KG answers the first part precisely: H225 confirms flammable liquid classification. The vector chain answers the second part: storage precautions from Section 7 of the MSDS. Neither could answer both parts alone. The synthesis LLM combines them into a single coherent answer.
+The KG answers the first part precisely: H225 confirms flammable liquid classification, stored as a structured triple. The vector chain answers the second part: storage precautions from Section 7 of the MSDS, retrieved as narrative prose. Neither chain could answer both parts alone. The synthesis LLM combines them into a single coherent answer. The logistics manager gets both the regulatory classification and the practical storage guidance.
 
 ---
 
@@ -693,24 +716,23 @@ INFO: kg chain completed in 2.41s
 INFO: Both chains completed in 2.41s (wall clock)
 ```
 
-The wall-clock time is the slower chain, not the sum. If you ran these sequentially, the same run would take 4.24 seconds. The parallel design saves ~1.8 seconds on every query.
+The wall-clock time is the slower chain, not the sum. If you ran these sequentially, the same run would take 4.24 seconds. The parallel design saves ~1.8 seconds on every query — which compounds significantly across a busy SAP system where many users are asking questions simultaneously.
 
 ---
 
 ## 7.12 Summary
 
-In this chapter we built the core of the hybrid RAG system:
+In this chapter we built the core of the hybrid RAG system on top of SAP HANA Cloud's unique combination of REAL_VECTOR search and native SPARQL execution:
 
 - Defined a shared **`HybridRAGState`** TypedDict that all components read and write
-- Built the **vector chain**: embed question → cosine search HANA → summarise with Gemini
-- Built the **KG chain**: generate SPARQL → execute on HANA → retry-on-empty → summarise
-- Wrote the **merge function**: synthesise when both chains return results; fall back gracefully when one or neither does
-- Assembled the **orchestrator** using `ThreadPoolExecutor` for true parallel execution
-- Exposed a **`/query` endpoint** with input validation and a clean request/response contract
+- Built the **vector chain**: embed question with `text-embedding-004` → cosine search HANA REAL_VECTOR → summarise with Gemini 2.5 Flash
+- Built the **KG chain**: generate SPARQL with Gemini 2.5 Flash → execute on HANA → retry-on-empty → summarise
+- Wrote the **merge function** with four explicit cases tied to enterprise answer quality: both (synthesise), KG only (precise facts), vector only (narrative context), neither (honest gap acknowledgement — never hallucinate)
+- Assembled the **orchestrator** using `ThreadPoolExecutor(max_workers=2)` for true parallel execution
+- Exposed a **`/query` endpoint** with material number validation and a clean request/response contract
 - Demonstrated **stateless conversation history** passed in every request
-- Verified with **three test scenarios** that hybrid retrieval outperforms either strategy alone
-
-The parallel orchestrator is the most important design decision in this system. Everything built in Chapters 3, 4, 5, and 6 converges here.
+- Verified with **three test scenarios** — safety officer, quality engineer, logistics manager — that hybrid retrieval outperforms either strategy alone
+- Added the **`sources` field** to the response for enterprise auditability
 
 ---
 
@@ -724,7 +746,7 @@ cd agents
 python -c "from agents.vector_chain import run_vector_chain; print('vector OK')"
 python -c "from agents.kg_chain import run_kg_chain; print('kg OK')"
 
-# 2. The orchestrator runs (requires HANA connection and Vertex AI)
+# 2. The orchestrator runs (requires HANA connection and Gemini API key)
 python -c "
 from agents.orchestrator import run_hybrid_rag
 result = run_hybrid_rag({
@@ -746,7 +768,7 @@ curl -s -X POST http://localhost:8000/query \
   | python -m json.tool
 ```
 
-If all three commands succeed and the final curl returns a JSON response with an `answer` field, the hybrid RAG agent is working. Chapter 8 extends it with a multi-agent supervisor layer for complex, multi-domain queries.
+If all three commands succeed and the final curl returns a JSON response with an `answer` field and a `sources` field, the hybrid RAG agent is working. Chapter 8 extends it with a multi-agent supervisor layer for complex, multi-domain queries that require different retrieval strategies per sub-question.
 
 ---
 

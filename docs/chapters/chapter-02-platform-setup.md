@@ -66,10 +66,10 @@ With this picture in mind, let us set it up.
 
 ### Signing Up
 
-Navigate to `account.hanatrial.ondemand.com` and click **Try for Free**.
+Navigate to `https://www.sap.com/products/technology-platform/trial.html` and click **Try now**.
 
-![SAP BTP Trial Signup](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/btp/01-btp-homepage.png)
-*Figure: SAP BTP Trial — navigate to account.hanatrial.ondemand.com and click Try for Free*
+![SAP BTP Trial Signup](docs/screenshots/btp/01-btp-homepage.png)
+*Figure 2.1 — SAP BTP Free Trial landing page — click "Try now" to start your free trial account*
 
 Fill in your details. Use a personal email address if possible — corporate email addresses sometimes cause issues with trial account activation. After verifying your email, BTP will automatically provision a trial account in either the EU10 (Frankfurt) or US10 (Virginia) region depending on your location.
 
@@ -264,7 +264,7 @@ Save the file as `gcp-sa-key.json` in a secure location outside your project dir
 
 The BTP Destination Service is the secure credential store that connects your BTP applications to external services. Your FastAPI agent will read the Vertex AI credentials from this destination at runtime — the JSON key never lives in application code or in `manifest.yml`.
 
-This is the SAP-native way to manage external service credentials, and it is an important pattern to understand. As Albada notes in *Building Applications with AI Agents*, modularity is essential in agent system design — your agent should be able to swap its LLM provider by changing a destination configuration, not by redeploying code.
+This is the SAP-native way to manage external service credentials, and it is an important pattern to understand from an enterprise architecture perspective. In BTP enterprise architecture, the Destination Service is the standard pattern for externalising all external API credentials — your agent switches AI providers by changing a destination configuration in the BTP Cockpit, not by touching application code or triggering a redeployment. This is the same pattern used for S/4HANA connectivity, external REST APIs, and OAuth token exchange across the entire BTP portfolio. In a landscape where dozens of BTP applications may share the same external service connection, this centralised approach also simplifies credential governance and audit trails — both of which matter in regulated industries.
 
 ### Creating the Destination
 

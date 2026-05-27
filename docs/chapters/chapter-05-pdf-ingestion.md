@@ -1,8 +1,10 @@
-# Chapter 5: The PDF Ingestion Pipeline
+# Chapter 5: The Document Intelligence Ingestion Pipeline
 
-In Chapter 4 you built two separate storage systems on SAP HANA Cloud: a vector table that answers fuzzy semantic questions and a knowledge graph that answers precise factual ones. Both systems are powerful in isolation. The missing piece is the plumbing — the code that takes a raw PDF file and feeds both systems at the same time, cleanly, without one pipeline blocking the other, and without leaving the user waiting at a spinning upload button.
+In Chapter 4 you built two storage systems on SAP HANA Cloud: a vector table that answers fuzzy semantic questions and a knowledge graph that answers precise factual ones. Both are powerful in isolation. The missing piece is the plumbing — the code that takes any PDF file uploaded against an SAP Material Number and feeds both systems at the same time, cleanly, without one pipeline blocking the other, and without leaving the user waiting at a spinning upload button.
 
 That is what this chapter builds. By the end of it you will have `agents/srv/doc_srv.py`, a production-quality ingestion service that receives a PDF upload, immediately acknowledges the request, and runs two threads simultaneously — one chunking and embedding text into the vector store, the other extracting structured triples into the knowledge graph. The caller gets a response in milliseconds. The heavy lifting happens asynchronously.
+
+The pipeline is document-type agnostic at the infrastructure level. Whether the uploaded file is an MSDS, a purchase order, a batch certificate, or a quality inspection report, the same dual-thread architecture applies. The vector pipeline always chunks, embeds, and stores to HANA REAL_VECTOR. The KG pipeline always calls Gemini and stores triples via SPARQL. The only thing that varies per document type is the Gemini prompt used for triple extraction — a single configuration point that determines what structured knowledge the pipeline extracts from that document class.
 
 There is a subtlety that trips up almost every developer the first time they write multithreaded database code in Python: connection sharing. A single HANA connection is not thread-safe. If Thread 1 and Thread 2 share one connection object, you will see intermittent failures that look like data corruption, because they are. This chapter explains why that happens, how Python's `threading.local()` solves it, and how to wire the solution correctly inside a FastAPI background task.
 
@@ -13,40 +15,40 @@ There is a subtlety that trips up almost every developer the first time they wri
 The fundamental design choice in this chapter is that every PDF upload triggers exactly two independent pipelines, running in parallel, with no coordination between them except that they both read from the same source file.
 
 ![Dual-Pipeline Ingestion Architecture](docs/screenshots/diagrams/06-dual-pipeline-architecture.png)
-*Figure 6.1: The dual-pipeline ingestion architecture. Thread 1 (left) chunks the PDF text and stores embeddings in MSDS_VECTORS. Thread 2 (right) sends full text to Gemini for triple extraction and stores the result as a named RDF graph in HANA. Both threads update their own status field on completion. The FastAPI endpoint returns immediately, before either thread has finished.*
+*Figure 5.1: The Document Intelligence Ingestion Pipeline. Thread 1 (left) chunks the PDF text and stores embeddings in MSDS_VECTORS. Thread 2 (right) sends full text to Gemini for triple extraction and stores the result as a named RDF graph in HANA. Both threads update their own status field on completion. The FastAPI endpoint returns immediately, before either thread has finished.*
 
 ### 5.1.1 Why process both in parallel?
 
-The naive approach is sequential: extract text, chunk, embed, store vectors — then extract text again, call Gemini for triples, store the graph. Sequential processing is easy to reason about. It is also 2× slower than it needs to be, because the two pipelines have no dependency on each other. The vector pipeline does not need to wait for Gemini to finish triple extraction. The KG pipeline does not need to wait for all chunks to be embedded.
-
-On a 30-page MSDS document the difference is significant. Embedding 60 chunks against the Vertex AI API takes roughly 8–12 seconds depending on network conditions. Calling Gemini for triple extraction from the same document takes 3–6 seconds. Sequential: 14–18 seconds. Parallel: 8–12 seconds (the slower pipeline dominates). The improvement compounds across every document in a batch upload.
-
-The deeper reason, though, is architectural. The two pipelines have genuinely different data access patterns:
+The two pipelines are genuinely independent operations. The vector pipeline calls `text-embedding-004` to generate embeddings for each chunk. The KG pipeline calls Gemini 2.5 Flash to generate RDF triples from the full document text. Neither result depends on the other. There is no reason to run them sequentially — doing so would simply double ingestion time.
 
 | Dimension | Vector pipeline | KG pipeline |
 |---|---|---|
 | Input to pipeline | Chunks (500 tokens each) | Full document text |
-| External API call | `text-embedding-004` (many calls) | `gemini-1.5-pro` (one call) |
+| External API call | `text-embedding-004` (many calls) | Gemini 2.5 Flash (one call) |
 | HANA operation | Many `INSERT` statements | One `SPARQL_EXECUTE` insert |
 | Failure mode | Can fail on any chunk | Atomic — succeeds or fails entirely |
 
-Because they differ in shape, running them in parallel does not require any shared mutable state. Thread 1 owns its list of chunks. Thread 2 owns the full document string. Neither touches the other's work.
+On a 30-page MSDS document the difference is measurable. Embedding 60 chunks against the Vertex AI API takes roughly 8–12 seconds. Calling Gemini 2.5 Flash for triple extraction from the same document takes 3–6 seconds. Sequential: 14–18 seconds. Parallel: 8–12 seconds (the slower pipeline dominates). The improvement compounds across every document uploaded across the platform.
+
+`ThreadPoolExecutor(max_workers=2)` is the implementation mechanism. It creates exactly two OS threads within the FastAPI process — one for each pipeline. This is true parallelism: the embedding API calls in Thread 1 and the Gemini call in Thread 2 execute concurrently, sharing nothing except the temp file path.
 
 ### 5.1.2 The fire-and-forget pattern
 
-The upload endpoint returns `{"status": "processing"}` immediately after spawning the background threads. The HTTP response is sent before either pipeline has done any significant work.
+The CAP Fiori UI calls `POST /process-upload` and needs a fast response. A user who clicks the upload button should not wait 10–15 seconds staring at a loading indicator — that is an unacceptable user experience for an enterprise application.
 
-This is the **fire-and-forget** pattern. The alternative — holding the HTTP connection open until both pipelines finish — would require the client to wait 10–15 seconds with no feedback, and would tie up a worker process that could be serving other requests.
+The solution is fire-and-forget. The upload endpoint returns `202 Accepted` with `{"status": "processing"}` immediately after spawning the background threads — before either pipeline has done any significant work. The HTTP connection closes. The threads run independently.
 
-The tradeoff is that the caller cannot know from the upload response whether ingestion succeeded. That is solved by a separate status endpoint, which the CAP frontend polls after upload. The status is persisted in HANA, so it survives a server restart — a subtle durability property that would be lost if status were stored in memory.
+The CAP service then polls `GET /status/{material_number}` every 3 seconds. The Fiori UI updates two status indicators — one for vector ingestion, one for KG ingestion — based on what the status endpoint returns. When both reach a terminal state (`DONE` or `ERROR`), polling stops and the UI updates the document card.
 
-> **Note:** Fire-and-forget is the right default for ingestion pipelines. The alternative, long-polling via a streaming endpoint, adds complexity without much benefit for a task that typically completes in under 15 seconds. If your documents are hundreds of pages long, consider a proper job queue (Celery + Redis). For the MSDS use case — typically 20–40 pages — fire-and-forget is sufficient.
+This decoupling is critical for BTP Cloud Foundry deployments. HTTP request timeouts on CF are typically 60 seconds. A large document (100+ pages) can take 90 seconds to process. Without fire-and-forget, those documents would always fail at the HTTP layer, even when the actual processing succeeded.
+
+Status is persisted in HANA — in the `MSDS_DOCUMENTS` table — not in memory. This means status survives a server restart. If the CF instance is recycled while processing is in flight, the status row already exists in HANA showing `PROCESSING`. A monitoring query can find and retry stalled documents without reading log files.
 
 ---
 
 ## 5.2 PDF text extraction with PyMuPDF
 
-PyMuPDF (import name `fitz`) is a Python binding for the MuPDF rendering library. It is the fastest Python-accessible PDF parser available and handles the dirty reality of MSDS PDFs well: multi-column layouts, embedded tables, rotated pages, and the mixture of text layers and bitmap content that characterises scanned regulatory documents.
+PyMuPDF (import name `fitz`) is a Python binding for the MuPDF rendering library. It is the fastest Python-accessible PDF parser available and handles the dirty reality of enterprise PDFs well: multi-column layouts, embedded tables, rotated pages, and the mixture of text layers and bitmap content that characterises scanned regulatory documents.
 
 Add it to `agents/requirements.txt`:
 
@@ -66,7 +68,7 @@ def extract_text(pdf_path: str) -> str:
     return text
 ```
 
-`page.get_text()` with no arguments returns the page's text content in reading order, with word-level coordinates used internally to reconstruct flow. For most MSDS documents this produces clean, paragraph-structured text. For scanned PDFs (no text layer) it returns an empty string — we will handle that case below.
+`page.get_text()` with no arguments returns the page's text content in reading order, with word-level coordinates used internally to reconstruct flow. For most MSDS documents this produces clean, paragraph-structured text. For scanned PDFs (no text layer) it returns an empty string — handled below.
 
 ### 5.2.1 Extracting with metadata
 
@@ -98,7 +100,7 @@ def extract_pdf_text(path: str) -> tuple[str, int]:
     return "\n\n".join(pages), len(pages)
 ```
 
-The `ValueError` is important. If a scanned PDF arrives and we silently extract an empty string, the vector pipeline produces zero embeddings and the KG pipeline sends an empty prompt to Gemini. Both pipelines appear to succeed, but the document is never searchable. Raising early surfaces the problem immediately.
+The `ValueError` is important. If a scanned PDF arrives and we silently extract an empty string, the vector pipeline produces zero embeddings and the KG pipeline sends an empty prompt to Gemini. Both pipelines appear to succeed, but the document is never searchable. Raising early surfaces the problem immediately and sets both status columns to `ERROR` with a meaningful message — visible to operators without reading log files.
 
 > **Warning:** PyMuPDF's `get_text()` preserves hyphenation artifacts from PDF layout. Words broken across lines (e.g., "flamma-" + newline + "ble") will appear as a hyphenated pair in the extracted string. For MSDS documents this rarely causes problems because the affected words are typically in multi-column safety tables, but if your documents have heavy hyphenation, consider a post-processing step: `text = re.sub(r'-\n', '', text)`.
 
@@ -125,9 +127,9 @@ Using `delete=False` gives us a path we can pass to background threads. We delet
 
 ## 5.3 Chunking strategy for vector search
 
-The vector pipeline does not process the full document text as a single unit. A 30-page MSDS document contains 8,000–12,000 words. Embedding that as one unit would produce a single 768-dimensional vector that averages the meaning of everything — hazard codes, first-aid steps, disposal procedures, regulatory text — into an undifferentiated blob. Cosine similarity against that vector would return the document for any question, because the document contains something relevant to almost any safety question. Precision would be zero.
+The vector pipeline does not process the full document text as a single unit. A 30-page MSDS document contains 8,000–12,000 words. Embedding that as one unit would produce a single 768-dimensional vector that averages the meaning of everything — hazard codes, first-aid steps, disposal procedures, regulatory text — into an undifferentiated blob. Cosine similarity against that vector would return the document for almost any question, because the document contains something relevant to almost any safety question. Precision would be zero.
 
-The answer is chunking: splitting the document into smaller, semantically coherent pieces and embedding each independently. The cosine search then retrieves the specific chunks that are most relevant to a question, not the whole document.
+The answer is chunking: splitting the document into smaller, semantically coherent pieces and embedding each independently. The cosine search then retrieves the specific chunks most relevant to a question, not the whole document.
 
 ### 5.3.1 Our chunking parameters
 
@@ -146,6 +148,8 @@ Material: Acetone (MAT-001)\n\n<chunk text>
 ```
 
 Adding the material name to every chunk significantly improves retrieval accuracy for multi-document queries. Without it, a chunk about "flammable liquid" could match any of dozens of materials.
+
+This prefix approach is also what makes the vector pipeline document-type agnostic. The same chunker, with the same parameters, handles an MSDS equally well as a purchase order or a quality inspection certificate — the material prefix ensures retrieved chunks are always scoped to the correct document.
 
 ### 5.3.2 The chunker function
 
@@ -199,7 +203,9 @@ The knowledge graph pipeline receives the **full document text**, not chunks. Th
 
 Gemini's triple extraction works best when it can see the entire document context. A hazard code (H225) might appear in Section 2 of an MSDS. The material name appears in Section 1. The supplier appears in Section 13. If we feed Gemini a chunk that contains only Section 2, it cannot associate H225 with the material and supplier, because those context clues are in different sections.
 
-For the KG pipeline, the goal is to extract a small number of high-precision facts (typically 5–15 triples per document). Gemini can easily handle 10,000 words in a single prompt, so there is no technical reason to chunk. The full-document approach produces far better triple quality.
+For the KG pipeline, the goal is to extract a small number of high-precision facts (typically 5–15 triples per document). Gemini 2.5 Flash can easily handle 10,000 words in a single prompt, so there is no technical reason to chunk. The full-document approach produces far better triple quality.
+
+The KG extraction prompt is the single configuration point that varies per document type. An MSDS prompt instructs Gemini to extract hazard codes, exposure limits, and precaution statements. An invoice prompt instructs it to extract vendor, line items, and payment terms. An inspection report prompt extracts test results, pass/fail verdicts, and inspector identity. The chunker code and the SPARQL insert code remain identical across all document types.
 
 ---
 
@@ -259,7 +265,7 @@ The `get_hana_connection()` function is called at the start of each thread funct
 
 ## 5.5 The ingestion flow in detail
 
-Now we have all the pieces. Let us trace the full execution path for a single document upload.
+Now we have all the pieces. Let us trace the full execution path for a single document upload from the CAP Fiori UI through to both HANA stores.
 
 ### 5.5.1 The upload endpoint
 
@@ -295,6 +301,8 @@ async def process_upload(
 
     return {"status": "processing", "materialNumber": materialNumber}
 ```
+
+The material number validation — `^[A-Za-z0-9_-]+$` — is enforced at every entry point in the application. This is SPARQL injection prevention: a material number like `MAT-001> } INSERT { <evil> }` would pass a naive check but break out of a SPARQL query. The regex ensures the material number can only contain characters that are safe to embed in an IRI.
 
 Three things happen before the response is sent: the uploaded file is written to a temp path, `_mark_processing()` sets both status fields to `'PROCESSING'` in HANA, and `_run_dual_pipeline()` is submitted to an executor — it runs *after* the response returns.
 
@@ -345,7 +353,7 @@ def _run_dual_pipeline(
         pass
 ```
 
-The `with ThreadPoolExecutor(max_workers=2)` block creates exactly two worker threads. `as_completed()` yields futures as they finish; we capture any exception from each without letting it propagate, so a failure in one pipeline does not cancel the other.
+The `with ThreadPoolExecutor(max_workers=2)` block creates exactly two worker threads. `as_completed()` yields futures as they finish; we capture any exception from each without letting it propagate, so a failure in one pipeline does not cancel the other. Both pipelines are given the opportunity to complete, succeed, or fail independently.
 
 ### 5.5.3 Thread 1 — the vector pipeline
 
@@ -375,7 +383,7 @@ def _vector_pipeline(
 
 `embed_text()` calls `text-embedding-004` through the Vertex AI Python SDK. For a 30-page document with 60 chunks, this function makes 60 sequential API calls, each taking roughly 150–200 ms — approximately 10–12 seconds total.
 
-`upsert_vectors()` executes a SQL `UPSERT` on the `MSDS_VECTORS` table, using `(material_number, chunk_index)` as the key. Re-uploading a document replaces its existing vectors cleanly.
+`upsert_vectors()` executes a SQL `UPSERT` on the `MSDS_VECTORS` table, using `(material_number, chunk_index)` as the key. Re-uploading a document replaces its existing vectors cleanly. The `MSDS_VECTORS` table serves all document types on the platform — an invoice chunk and an MSDS chunk differ only in their content and the material number they are associated with.
 
 > **Tip:** For large document batches, consider batching the embedding calls. The `text-embedding-004` endpoint accepts up to 250 texts in a single request. Instead of 60 individual calls for 60 chunks, one batched call returns all 60 embeddings at once. The latency drops from ~10 seconds to ~1.5 seconds for the embed step. Batching is shown in Appendix C.
 
@@ -398,26 +406,28 @@ def _kg_pipeline(text: str, material_number: str) -> None:
     close_thread_connection()
 ```
 
-`extract_triples_from_text()` is the Gemini extraction function built in Chapter 4. It sends the full text to `gemini-1.5-pro` with a structured prompt that includes the ontology predicates and asks for JSON output. `insert_triples()` builds a SPARQL `INSERT DATA` query and calls `SPARQL_EXECUTE` on the HANA connection.
+`extract_triples_from_text()` is the Gemini 2.5 Flash extraction function built in Chapter 4. It sends the full text with a structured prompt that includes the ontology predicates and asks for JSON output. `insert_triples()` builds a SPARQL `INSERT DATA` query and calls `SPARQL_EXECUTE` on the HANA connection. The resulting triples are stored in the named graph `MSDS_Graph/MAT-XXX` under the `msds.kg` namespace.
 
-The "zero triples" check is deliberate. A successful Gemini call that returns no triples is worse than a clean failure — the document would appear as `kgStatus = 'DONE'` to the user but produce no graph query results. Raising `ValueError` here sets `kgStatus = 'ERROR'`, which makes the problem visible.
+The "zero triples" check is deliberate. A successful Gemini call that returns no triples is worse than a clean failure — the document would appear as `kgStatus = 'DONE'` to the user but produce no graph query results. Raising `ValueError` here sets `kgStatus = 'ERROR'`, which makes the problem visible in the CAP UI and queryable in the `MSDS_DOCUMENTS` table.
 
 ---
 
 ## 5.6 Status tracking
 
-The user interface needs to know when ingestion is complete. The CAP frontend polls `GET /status/{materialNumber}` every 3 seconds until both pipelines report a terminal state (`DONE` or `ERROR`).
+The CAP Fiori UI needs to know when ingestion is complete and what the result counts are. The UI polls `GET /status/{materialNumber}` every 3 seconds until both pipelines report a terminal state. The status data it receives comes entirely from the `MSDS_DOCUMENTS` table in HANA.
 
-### 5.6.1 The status fields
+### 5.6.1 The MSDS_DOCUMENTS table and its role
 
-The `MSDS_DOCUMENTS` table has two status columns:
+`MSDS_DOCUMENTS` is the control plane of the ingestion pipeline. Every upload creates or updates a row here. The CAP OData service reads from this table to populate the document list in the Fiori UI — the `triples` count (how many KG facts were extracted), the `vectors` count (how many chunks were embedded), and the status indicators for each pipeline all come from this table.
 
 | Column | Tracks | Values |
 |---|---|---|
-| `status` | KG pipeline | `PROCESSING`, `DONE`, `ERROR` |
-| `vectorStatus` | Vector pipeline | `PROCESSING`, `DONE`, `ERROR` |
+| `STATUS` | KG pipeline | `PROCESSING`, `DONE`, `ERROR` |
+| `VECTOR_STATUS` | Vector pipeline | `PROCESSING`, `DONE`, `ERROR` |
+| `KG_ERROR` | KG failure reason | NULL or error message |
+| `VECTOR_ERROR` | Vector failure reason | NULL or error message |
 
-Both are populated before the upload returns (`PROCESSING`), updated by the background threads on completion, and read by the status endpoint. Using two separate columns rather than one combined status allows the UI to show partial progress — "Vector: DONE, KG: processing..." — and makes it easier to retry only the failed pipeline.
+Using two separate status columns rather than one combined status allows the UI to show partial progress — "Vector: DONE, KG: PROCESSING..." — and makes it possible to retry only the failed pipeline without re-running the successful one.
 
 ### 5.6.2 Status helper functions
 
@@ -494,7 +504,7 @@ def get_status(material_number: str):
     }
 ```
 
-The `complete` boolean is the sentinel the CAP frontend uses to stop polling. If `complete` is `true` but either status is `ERROR`, the frontend shows an error banner but does not block navigation — the user can still query whatever pipeline succeeded.
+The `complete` boolean is the sentinel the CAP service uses to stop polling. If `complete` is `true` but either status is `ERROR`, the Fiori UI shows an error banner with the error message but does not block navigation — the user can still query against whichever pipeline succeeded.
 
 ---
 
@@ -511,7 +521,7 @@ The most important design property of this ingestion service is **error isolatio
 
 Scenario 2 deserves attention because it reflects a real operational condition. When a Vertex AI service outage occurs, every embedding call will fail. If error propagation were allowed, the `ThreadPoolExecutor` would cancel the KG future when the vector future raises — and the document would have no graph knowledge despite the Gemini extraction succeeding. The `try/except` wrapper in `as_completed()` prevents that cancellation.
 
-> **Note:** Persisting error messages in the `KG_ERROR` and `VECTOR_ERROR` columns means operators can run `SELECT MATERIAL_NUMBER, KG_ERROR FROM MSDS_DOCUMENTS WHERE STATUS = 'ERROR'` to get a triage list — without reading log files.
+Persisting error messages in the `KG_ERROR` and `VECTOR_ERROR` columns means operators can run `SELECT MATERIAL_NUMBER, KG_ERROR FROM MSDS_DOCUMENTS WHERE STATUS = 'ERROR'` to get a triage list without reading log files. This is the operational advantage of storing status in HANA rather than in application logs.
 
 ---
 
@@ -555,7 +565,7 @@ After 8–15 seconds:
     "vectorStatus": "DONE",
     "kgError": null,
     "vectorError": null,
-    "updatedAt": "2026-05-26 09:31:17.447",
+    "updatedAt": "2026-05-27 09:31:17.447",
     "complete": true
 }
 ```
@@ -623,14 +633,15 @@ Upload the remaining four PDFs (`MAT-002` through `MAT-005`) with the same patte
 
 ## 5.9 Summary
 
-This chapter built the pipeline that bridges PDF uploads and the dual-store knowledge layer. The key design decisions:
+This chapter built the pipeline that bridges PDF uploads and the dual-store knowledge layer. The architecture applies to any document type uploaded against an SAP Material Number. The key design decisions:
 
-- **Parallel threads** — two independent pipelines in a `ThreadPoolExecutor` reduce ingestion time to the slower pipeline's duration, not the sum of both.
-- **Fire-and-forget with status polling** — the upload endpoint returns in milliseconds; the CAP frontend polls every 3 seconds. Decouples ingestion time from HTTP timeouts.
+- **Parallel threads** — `ThreadPoolExecutor(max_workers=2)` runs the KG extraction (Gemini 2.5 Flash) and the vector embedding (`text-embedding-004`) simultaneously. These operations are independent: neither pipeline waits for the other. Wall-clock ingestion time equals the slower pipeline, not the sum.
+- **Fire-and-forget with status polling** — the upload endpoint returns 202 in milliseconds. The CAP Fiori UI polls every 3 seconds. Decouples ingestion time from HTTP timeouts — essential for large documents on BTP CF.
 - **Thread-local HANA connections** — `threading.local()` gives each worker thread its own connection object, eliminating race conditions without connection pooling infrastructure.
-- **Different text strategies per pipeline** — the vector pipeline chunks to 500 tokens; the KG pipeline sends the full document. Chunking optimises embedding precision; full text optimises triple extraction accuracy.
+- **Different text strategies per pipeline** — the vector pipeline chunks to 500 tokens for embedding precision; the KG pipeline sends the full document for triple extraction quality.
+- **Document-type agnostic vector pipeline** — the same chunker and embed logic handles any PDF. Only the KG extraction prompt changes per document type.
 - **Error isolation** — exceptions in one pipeline are caught and persisted as `ERROR` status without interrupting the other pipeline.
-- **Dual status fields** — `STATUS` (KG) and `VECTOR_STATUS` independently track each pipeline. A partial success is visible, queryable, and retryable.
+- **MSDS_DOCUMENTS as control plane** — status, error messages, and counts are persisted in HANA. The CAP service reads this table directly. Operators can triage failures with SQL, not log files.
 
 ---
 
@@ -639,9 +650,9 @@ This chapter built the pipeline that bridges PDF uploads and the dual-store know
 Before moving to Chapter 6, confirm each of the following:
 
 - [ ] `agents/srv/doc_srv.py` exists and `uvicorn main:app --port 8000` starts without import errors.
-- [ ] `POST /process-upload` with a real MSDS PDF returns `{"status": "processing"}` within 500 ms.
+- [ ] `POST /process-upload` with a real PDF returns `{"status": "processing"}` within 500 ms.
 - [ ] `GET /status/{materialNumber}` returns `"complete": true` within 30 seconds for a 20–40 page document.
-- [ ] Five MSDS documents uploaded; all show `kgStatus = "DONE"` and `vectorStatus = "DONE"`.
+- [ ] Five documents uploaded; all show `kgStatus = "DONE"` and `vectorStatus = "DONE"`.
 - [ ] `SELECT COUNT(*) FROM MSDS_VECTORS WHERE MATERIAL_NUMBER = 'MAT-001'` returns a positive number.
 - [ ] `SELECT CARDINALITY(EMBEDDING) FROM MSDS_VECTORS FETCH FIRST 1 ROWS ONLY` returns `768`.
 - [ ] SPARQL query against `MSDS_Graph/MAT-001` returns at least one triple with predicate `hasHazardCode`.

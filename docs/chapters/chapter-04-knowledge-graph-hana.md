@@ -1,8 +1,10 @@
 # Chapter 4: Knowledge Graphs on SAP HANA Cloud
 
-In Chapter 3 we built a vector store that retrieves passages of MSDS text by semantic similarity. It works beautifully when the question is fuzzy — "what precautions should I take when using acetone near a flame?" — because the answer lives in flowing prose. But the moment a user asks something precise — "what is the GHS hazard classification for acetone?" — vector search starts to wobble. The right paragraph might come back with a similarity score of 0.62, sandwiched between a chunk about storage temperature and another about regulatory disclaimers. The exact codes — H225, H319, H336 — are buried in a sentence among many other sentences.
+Vector search excels at finding relevant passages. It fails at extracting precise facts. When a regulatory auditor asks "What is the GHS hazard classification for this chemical?", they need a specific code — H225, H319 — not a paragraph that mentions classifications. When a procurement manager asks "Which supplier certified this batch?", they need a name and a date, not a fuzzy match. When a quality engineer asks "Did this material pass the viscosity test?", they need "PASS" or a measured value, not a ranked list of test methodology paragraphs.
 
-This chapter fills that gap. We are going to teach our system to remember structured facts as a graph, store them in SAP HANA Cloud, and query them with SPARQL. By the end of this chapter, the question "what are the GHS hazard codes for acetone?" will return exactly `["H225", "H319", "H336"]` — not a paragraph that mentions them, the codes themselves.
+RDF knowledge graphs store facts as precise triples that can be queried exactly. This is what HANA Cloud's SPARQL engine provides. Unlike the vector store, which searches by proximity in embedding space, the knowledge graph traverses explicit relationships. The query is not "find what is most similar to this question" — it is "traverse this graph and return the value at this exact node."
+
+By the end of this chapter, a SPARQL query for hazard codes will return exactly `["H225", "H319", "H336"]` — not a paragraph that mentions them, the codes themselves.
 
 If you have never written a line of RDF or SPARQL, do not worry. There are entire books about each. We need only enough of each to build a working hybrid RAG system. Concretely, you will need to understand three SPARQL patterns and one stored procedure call. That is the whole surface area for the rest of this book.
 
@@ -53,13 +55,13 @@ Three things, in order of how much you will care:
 
 1. **No schema changes when facts evolve.** Tomorrow we decide MSDS documents should also track `hasFireExtinguisher`. We do not run a `DDL` migration; we just start storing triples with that predicate. The graph is permissive about what relationships exist.
 2. **Queries that follow paths.** "Find me every material whose supplier is in Missouri" — that is a graph traversal. SPARQL expresses it directly. In SQL it would be a chain of joins.
-3. **Identity by IRI.** Every node has a globally unique IRI (a URL-shaped identifier). This means a triple in our system can refer to the same Acetone node that any other system uses, simply by sharing an IRI. You will not need this superpower in this book, but it is the reason RDF exists.
+3. **Identity by IRI.** Every node has a globally unique IRI (a URL-shaped identifier). This means a triple in our system can refer to the same material node that any other system uses, simply by sharing an IRI.
 
-For our MSDS use case we will use the graph mainly for the first reason — flexibility — and for the *precision* it gives us at query time. A SPARQL query for hazard codes returns hazard codes, not paragraphs.
+For our material document use case we will use the graph mainly for the first reason — flexibility — and for the *precision* it gives us at query time. A SPARQL query for hazard codes returns hazard codes, not paragraphs.
 
 ![Knowledge Graph Pipeline](docs/screenshots/diagrams/05-kg-pipeline.png)
 
-*Figure 4.2 — The KG pipeline has two phases. Ingestion (top): full PDF text is passed to Gemini along with the OWL ontology as a constraint, producing RDF triples that are stored as a named graph in HANA. Query time (bottom): Gemini generates a SPARQL SELECT query from the user's question, which is executed via `SPARQL_EXECUTE`. A retry loop broadens the query if results are empty. The resulting facts are summarised by Gemini into an answer fragment.*
+*Figure 4.2 — The KG pipeline has two phases. Ingestion (top): full PDF text is passed to Gemini 2.5 Flash along with the OWL ontology as a constraint, producing RDF triples that are stored as a named graph in HANA. Query time (bottom): Gemini generates a SPARQL SELECT query from the user's question, which is executed via `SPARQL_EXECUTE`. A retry loop broadens the query if results are empty. The resulting facts are summarised by Gemini into an answer fragment.*
 
 ---
 
@@ -88,15 +90,19 @@ SELECT ?code WHERE {
 
 The `?code` is a variable. The query reads: "find me every value of `?code` such that the triple `(Acetone, hasHazardCode, ?code)` exists." Run that against our graph and you get back three rows: `H225`, `H319`, `H336`.
 
-If you can read this much SPARQL, you can read everything our system generates. We are going to lean on Gemini to generate more elaborate SPARQL on demand, but the patterns are always shaped like the example above.
+If you can read this much SPARQL, you can read everything our system generates. We are going to lean on Gemini 2.5 Flash to generate more elaborate SPARQL on demand, but the patterns are always shaped like the example above.
 
 > **Tip:** SPARQL has 4 query forms — `SELECT`, `CONSTRUCT`, `ASK`, `DESCRIBE`. We use only `SELECT` in this book. You will not miss the others.
 
 ---
 
-## 4.3 Why HANA Cloud supports SPARQL
+## 4.3 Why HANA Cloud for the Knowledge Graph
 
-SAP HANA Cloud has a built-in graph engine. Among other things, it supports the W3C SPARQL standard for querying RDF data. Unlike dedicated triple stores (Apache Jena, GraphDB, Stardog), HANA exposes SPARQL through a single stored procedure: **`SPARQL_EXECUTE`**.
+SAP HANA Cloud has a built-in graph engine with native SPARQL support. This is architecturally significant for BTP deployments — and it is worth pausing to explain why we did not choose a dedicated triple store.
+
+The alternatives are well-known: Apache Fuseki, AWS Neptune, GraphDB, Stardog. Each is a capable, purpose-built triple store with a standard SPARQL HTTP endpoint. The reason we do not use any of them is simple: we already have HANA Cloud running as our vector store. Adding a separate triple store means a second BTP service, a second set of credentials, a second Destination Service entry, and a second connection pool to manage in application code. For a production BTP deployment, that is unnecessary complexity.
+
+HANA's SPARQL support is exposed through a single stored procedure: **`SPARQL_EXECUTE`**. This procedure runs SPARQL queries natively on the same database that holds vector embeddings. One HANA connection handles both `COSINE_SIMILARITY` searches on `MSDS_VECTORS` and SPARQL graph traversals on named RDF graphs. The application code in `vector_srv.py` and `kg_srv.py` both call `get_connection()` from the same `hdb_srv` module. No separate connection string, no separate service binding.
 
 That is the entirety of the HANA SPARQL interface. There is no separate endpoint, no `/sparql` HTTP route. Every query, every insert, every drop — all of it goes through one procedure call:
 
@@ -123,7 +129,7 @@ Every result row is a tuple of column values, one per `?variable` in the `SELECT
 
 ### Why a stored procedure and not an HTTP endpoint?
 
-Because HANA already has secure, audited, governed connectivity through its SQL driver. Wrapping SPARQL inside a stored procedure means every SPARQL operation reuses the same authentication, the same connection pooling, the same transaction semantics, and the same logging that a normal SQL statement would. For an enterprise platform, that uniformity is more valuable than HTTP convenience.
+Because HANA already has secure, audited, governed connectivity through its SQL driver. Wrapping SPARQL inside a stored procedure means every SPARQL operation reuses the same authentication, the same connection pooling, the same transaction semantics, and the same logging that a normal SQL statement would. For an enterprise BTP deployment, that uniformity is more valuable than HTTP convenience. One Destination Service entry. One set of HANA credentials. Two retrieval strategies.
 
 ---
 
@@ -142,7 +148,7 @@ For an MSDS, the four predicates that matter for downstream queries are:
 
 Four predicates. Four classes of node. That is enough to answer the precision questions our hybrid agent will face. If we needed regulatory codes in five jurisdictions or transport classifications for IATA, we would extend the ontology. We deliberately stay small.
 
-> **Note:** Real-world MSDS systems track 50+ predicates — physical properties, transport codes, decomposition products, first-aid measures, environmental fate. We pick four because they are enough to demonstrate the architecture and let you focus on the *patterns*. The patterns scale.
+> **Note:** Real-world material document systems track 50+ predicates — physical properties, transport codes, decomposition products, first-aid measures, environmental fate, batch test parameters, invoice line amounts. We pick four because they are enough to demonstrate the architecture and let you focus on the *patterns*. The patterns scale directly to broader ontologies.
 
 ---
 
@@ -217,6 +223,8 @@ A few things to point out:
 - `rdfs:label` is human-readable text. It does not affect the graph; it just makes browsers and tools show better names.
 - `rdfs:domain` and `rdfs:range` are the type constraints — domain is the type of the subject, range is the type of the object.
 
+The namespace `http://msds.knowledge-graph.org/` reflects the MSDS reference implementation. For a production multi-document deployment serving multiple document types, the namespace would be organisation-specific — for example `http://materials.yourcompany.com/kg/`. The predicates are generic enough to describe facts across document types: `hasHazardCode` works for any GHS or regulatory identifier in an MSDS; `requiresPrecaution` works for compliance mandates in a legal document; `hasExposureLimit` works for batch certificate test parameters expressed as limit values. The ontology names a domain, but the structural patterns transfer.
+
 We are not loading this file into HANA at runtime. It is a contract — a documentation and prompting artifact. Our triple extractor reads this file (or a summary of it) to know what predicates Gemini is allowed to produce.
 
 > **Tip:** If you ever need to share your ontology with another team or load it into a tool like Protégé for visual editing, this is the file you hand them. Keep it under version control alongside your code.
@@ -225,11 +233,13 @@ We are not loading this file into HANA at runtime. It is a contract — a docume
 
 ## 4.6 Extracting triples from MSDS text using Gemini
 
-This is where the LLM earns its keep. We hand Gemini a chunk of MSDS text and a list of allowed predicates, and ask it to return JSON triples. Three things make this trustworthy:
+This is where the LLM earns its keep. We hand Gemini 2.5 Flash a chunk of document text and a list of allowed predicates, and ask it to return JSON triples. Three things make this trustworthy:
 
 1. **Constrained predicates.** The prompt enumerates the four allowed predicates. Anything Gemini emits with a predicate outside that list is filtered out before it reaches HANA.
 2. **JSON output.** No prose, no narration — just an array of objects. We strip any markdown fences Gemini sneaks in and `json.loads` the rest.
 3. **Material number provided.** The subject of every triple is set externally. The model does not get to invent which material the facts belong to.
+
+This is an important architectural principle: Gemini 2.5 Flash acts as a structured extraction engine here, not as a data authority. The material number is injected by the CAP upload pipeline, validated against S/4HANA's API_PRODUCT_SRV before the document is accepted. Gemini extracts facts from text; it never decides which material those facts belong to.
 
 Here is the prompt, lifted directly from `kg_srv.py`:
 
@@ -283,17 +293,21 @@ Each row is one fact. Now we need a place to put them.
 
 ---
 
-## 4.7 Storing triples in HANA — named graphs per document
+## 4.7 Storing triples in HANA — named graphs per material
 
 Every triple in HANA's SPARQL engine lives in a **named graph**. A named graph is just an IRI that groups a set of triples. Think of it as a schema, but for facts instead of tables.
 
 We follow a simple rule: **one named graph per material**. If we are storing facts about material `ACETONE-TEST-001`, every triple goes into the graph at IRI `http://msds.knowledge-graph.org/MSDS_Graph/ACETONE-TEST-001`. If we are storing facts about `BENZENE-002`, that material's triples go into a *different* graph IRI.
 
-Why?
+This pattern maps directly to SAP's material isolation requirements. In SAP MM, material data is scoped to a material number. In the Material Document Intelligence Platform, the same isolation holds: a SPARQL query scoped to the named graph for MAT-001 cannot return facts from MAT-002. The graph boundary enforces data isolation at the database level, not in application logic.
+
+Three practical consequences:
 
 1. **Clean deletion.** When a material is deprecated, `DROP GRAPH <graph-iri>` removes every fact for that material in one statement. There is no per-row cleanup, no orphans.
-2. **Isolation.** Two materials can never accidentally share a triple. A bad extraction for benzene cannot pollute acetone's facts.
-3. **Auditability.** A SPARQL query scoped to a single graph can never read facts about other materials. This is a useful property when an engineer asks "show me everything we know about material X" and you must guarantee that nothing else leaks in.
+2. **Multi-tenant safety.** A bad extraction for benzene cannot pollute acetone's facts. Graph boundaries are enforced by HANA's SPARQL engine, not by application-layer filtering.
+3. **Auditability.** A SPARQL query scoped to a single named graph can never read facts about other materials. When a compliance auditor asks "show me everything the system knows about material X", the named graph provides a hard scope that the audit trail can reference.
+
+The real graph URIs in the reference implementation follow the pattern `http://msds.knowledge-graph.org/MSDS_Graph/MAT-XXX`, where `MAT-XXX` is the SAP material number validated at upload time. This is the same material number stored in `MSDS_VECTORS.MATERIAL_NUMBER`. The named graph IRI and the vector table filter column are two representations of the same SAP material identifier.
 
 Here is the storage code, the heart of `store_triples` in `kg_srv.py`:
 
@@ -326,14 +340,13 @@ The single quote escape (`replace("'", "\\'")`) is the SPARQL injection defense 
 
 ---
 
-## 4.8 Writing SPARQL queries — from natural language to graph traversal
+## 4.8 Writing SPARQL queries — Gemini as the SPARQL translator
 
-When a user asks "what are the GHS hazard codes for acetone?", we cannot send that English directly to HANA. We must translate it to SPARQL. Two strategies:
+When a user asks "what are the GHS hazard codes for acetone?", we cannot send that English directly to HANA. We must translate it to SPARQL.
 
-1. **Hand-write SPARQL templates.** For a fixed set of question types (hazards, limits, suppliers, precautions) you write four templates and pick the right one based on keyword matching.
-2. **Have the LLM generate SPARQL.** Pass the question and a description of the schema to Gemini, get back a query, run it.
+Gemini 2.5 Flash acts as a SPARQL translator — the user asks in natural language, Gemini writes the SPARQL, HANA executes it. This is a key architectural pattern: the LLM never directly handles data — it only generates queries that the database executes. All data access goes through HANA's SPARQL engine. This is auditable, controllable, and secure. The data never leaves HANA to be processed by the LLM. Gemini sees the question and the schema; HANA owns the facts.
 
-We use approach 2 in this book because it scales as the ontology grows and because Gemini is genuinely good at this task when given the right context. The crucial input to Gemini is the *list of available predicates* and the *named graph IRI*. Without those, the model invents predicate names like `hazardClass` that do not exist in our graph.
+Two conditions make this work reliably. First, Gemini must know the available predicates and their full IRIs — without this, the model invents predicate names like `hazardClass` that do not exist in our graph. Second, Gemini must know the named graph IRI for this material — without the `GRAPH <iri> { ... }` wrapper, HANA returns zero rows silently.
 
 Here is the heart of `query_graph`:
 
@@ -383,6 +396,8 @@ SELECT ?value WHERE {
 ```
 
 We pass it through `SPARQL_EXECUTE`, grab `result[3]`, and return `["H225", "H319", "H336"]`. Done.
+
+The data stayed in HANA throughout. Gemini generated a query string; HANA executed it against the stored graph. The LLM never touched the hazard code values directly.
 
 ---
 
@@ -575,6 +590,8 @@ The material number is **interpolated into IRIs** that we paste into SPARQL text
 
 This is the SPARQL equivalent of SQL injection. The regex `^[A-Za-z0-9_-]+$` allows only letters, digits, underscore, and hyphen — characters that have no special meaning in SPARQL syntax. Any input containing slashes, spaces, angle brackets, quotes, or other SPARQL metacharacters is rejected before it can reach the query.
 
+The same material number format is enforced in the CAP upload handler before the document reaches the Python layer at all, matching it against S/4HANA's product master. Validation at the CAP layer, at the Python service entry, and at the SQL parameter level — three checkpoints for a single identifier.
+
 > **Warning:** If you change this regex to be more permissive — say, to allow forward slashes for hierarchical material codes — you must update the storage and query code to escape those characters too. The simplest defense is to keep the regex tight and document the constraint for upstream callers.
 
 We also escape single quotes in literal values inside `store_triples`. Combined, validation on identifiers and escaping on literals cover the two injection vectors.
@@ -690,7 +707,7 @@ Hazard codes found: ['H225', 'H319', 'H336']
 Knowledge graph test: OK
 ```
 
-> **Note:** The total of 16 triples — twice the number of facts — is the two-statement pattern from Section 5.7. Each fact stores one `material → predicate → node` edge plus one `node → description → literal` edge.
+> **Note:** The total of 16 triples — twice the number of facts — is the two-statement pattern from Section 4.7. Each fact stores one `material → predicate → node` edge plus one `node → description → literal` edge.
 
 If your test prints `Facts found: []`, three things to check, in this order:
 
@@ -738,7 +755,7 @@ Output:
 ['H225', 'H319', 'H336']
 ```
 
-Three strings. Exact codes. No paragraph to parse, no scoring, no chunk boundary luck. The graph either has the fact or it does not — and if it has it, the query returns it.
+Three strings. Exact codes. No paragraph to parse, no scoring, no chunk boundary luck. The graph either has the fact or it does not — and if it has it, the query returns it. Gemini generated the SPARQL; HANA executed it; the facts came back directly. The LLM was a query generator, not a data processor.
 
 This is the contract:
 
@@ -752,7 +769,7 @@ This is the contract:
 
 Neither one wins on its own. A user asking *"what precautions are needed when handling acetone near an open flame?"* needs the prose chunk that paints the full picture. A user asking *"what is the GHS hazard classification?"* needs the codes verbatim. The whole point of the next chapter — building the LangGraph supervisor — is to choose between them, or run both and merge the answers.
 
-> **Tip:** A useful intuition: the vector store remembers *what was said*. The knowledge graph remembers *what is true*. The first is great for context, the second is great for facts. Most non-trivial questions need both.
+> **Tip:** A useful intuition: the vector store remembers *what was said*. The knowledge graph remembers *what is true*. The first is great for context, the second is great for facts. Most non-trivial enterprise document questions need both.
 
 ---
 
@@ -760,14 +777,16 @@ Neither one wins on its own. A user asking *"what precautions are needed when ha
 
 You now have a working knowledge graph layer on HANA Cloud. Specifically:
 
-- An ontology (`MSDS_Ontology.ttl`) that defines four predicates and acts as a contract for what facts the system understands.
+- An ontology (`MSDS_Ontology.ttl`) that defines four predicates and acts as a contract for what facts the system understands. The namespace `http://msds.knowledge-graph.org/` reflects the MSDS reference implementation; production deployments use an organisation-specific namespace.
 - A `kg_srv.py` service module exposing `extract_triples`, `store_triples`, `query_graph`, `count_triples`, and `delete_graph`.
-- A working pipeline that pulls JSON triples from MSDS text using Gemini, stores them in per-material named graphs, and queries them with auto-generated SPARQL.
+- A working pipeline that pulls JSON triples from document text using Gemini 2.5 Flash, stores them in per-material named graphs in HANA, and queries them with auto-generated SPARQL.
+- Named graphs scoped per material number, providing the same material isolation that SAP MM enforces for product master data. Graph `MSDS_Graph/MAT-001` cannot return facts from `MSDS_Graph/MAT-002`.
 - Validated material identifiers and escaped literals — defense against the SPARQL equivalent of injection.
 - The pattern `cursor.callproc("SPARQL_EXECUTE", (query, None, None, None))` followed by `result[3]` for rows.
 - The mandatory `GRAPH <iri> { ... }` wrapper for every triple pattern.
+- No separate triple store required. One HANA Cloud instance, accessed through one connection pool, serves both vector embeddings and RDF graph traversals.
 
-The investment was small — under 200 lines of Python, one Turtle file, and a single stored procedure call — but the capability is fundamentally different from what vector search alone gave us. We can now answer fact-shaped questions with fact-shaped answers.
+The investment was small — under 200 lines of Python, one Turtle file, and a single stored procedure call — but the capability is fundamentally different from what vector search alone gave us. We can now answer fact-shaped questions with fact-shaped answers. And we can do it without adding a second BTP service or a second set of credentials.
 
 ---
 
@@ -790,8 +809,8 @@ This should print a list containing `H225`, `H319`, and `H336` (and possibly oth
 If both succeed, you have:
 
 - HANA Cloud reachable through `hdb_srv`
-- Vertex AI generating valid SPARQL through `vertex_srv`
-- A populated named graph for `ACETONE-TEST-001`
+- Gemini 2.5 Flash generating valid SPARQL through the `get_llm()` getter in `vertex_srv`
+- A populated named graph for `ACETONE-TEST-001` at `http://msds.knowledge-graph.org/MSDS_Graph/ACETONE-TEST-001`
 - Working extraction, storage, and query paths
 
 In Chapter 6 we put both retrievers — vector and graph — behind a LangGraph supervisor that picks the right tool (or both) based on the user's question. The hybrid in *Hybrid RAG* finally starts to make sense.

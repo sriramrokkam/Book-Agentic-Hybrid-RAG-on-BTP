@@ -6,11 +6,11 @@ But consider a different class of question: "I am setting up a new chemical stor
 
 This is the complexity ceiling of a single-agent system. When a question spans multiple domains and each domain requires focused, specialised reasoning, a team of specialist agents produces better answers than a generalist agent working alone.
 
-This chapter introduces the **supervisor pattern**: a coordinator agent that receives complex questions, decomposes them, routes sub-questions to specialist agents, and synthesises their results into a final answer. By the end of this chapter you will have a multi-agent system built on LangGraph where each specialist runs independently and the supervisor coordinates them.
+This chapter introduces the **supervisor pattern**: a coordinator agent that receives complex questions, decomposes them, routes sub-questions to specialist agents, and synthesises their results into a final answer. The pattern is demonstrated with MSDS-specific specialists, but the architecture is general — the same supervisor, state machine, and merge logic apply to any SAP document type.
 
 ---
 
-## 8.1 The complexity ceiling
+## 8.1 Why multi-agent for SAP enterprise
 
 A generalist agent has one prompt, one retrieval context, and one LLM call to produce its answer. When questions are simple and focused, this is efficient. When questions are complex and multi-domain, it creates three problems.
 
@@ -18,9 +18,9 @@ A generalist agent has one prompt, one retrieval context, and one LLM call to pr
 
 **Problem 2: Prompt overloading.** The LLM receives a long prompt with mixed signals. It must simultaneously reason about regulatory thresholds, GHS classifications, and PPE requirements. The answer tends to be shallow across all three rather than deep on any one.
 
-**Problem 3: Uneven coverage.** The LLM often gives more weight to topics it finds easiest to answer, leaving some domains underserved. With a single-pass architecture, there is no mechanism to detect and compensate for this.
+**Problem 3: Uneven retrieval strategy per domain.** Different document sections require different retrieval strategies. A question about GHS hazard codes (structured data) is best answered from the knowledge graph, where codes and descriptions are stored as precise triples. A question about first aid procedures (narrative text) is best answered from the vector store, where the prose of Section 4 lives. A question about regulatory compliance requires both — structured exposure limits from the KG and narrative regulatory context from the vector store. A generalist agent applies one strategy to all three. A specialist agent applies the right strategy to its domain.
 
-The supervisor pattern solves all three by decomposing the question *before* retrieval.
+The supervisor pattern solves all three by decomposing the question *before* retrieval — routing each sub-question to a specialist that uses the correct retrieval strategy for that knowledge type.
 
 ---
 
@@ -31,44 +31,40 @@ The supervisor pattern has four components:
 | Component | Role |
 |---|---|
 | **Supervisor** | Receives the user question, decomposes it into sub-questions, routes each to the right specialist, collects results |
-| **Specialist agents** | Each handles one focused domain — retrieves relevant data, generates a domain-specific answer |
+| **Specialist agents** | Each handles one focused domain — retrieves relevant data using the right strategy, generates a domain-specific answer |
 | **SummaryAgent** | Receives all specialist answers, synthesises them into a single coherent response |
 | **Shared state** | Carries the original question, sub-questions, and all specialist answers through the graph |
 
 ![Multi-Agent Supervisor Pattern](docs/screenshots/diagrams/09-supervisor-pattern.png)
-*Figure: The multi-agent supervisor — the supervisor decomposes the question and routes sub-questions to three specialist agents (running in parallel where possible). The SummaryAgent synthesises all results into the final answer.*
+*Figure 8.1: The multi-agent supervisor — the supervisor decomposes the question and routes sub-questions to specialist agents running in parallel. The SummaryAgent synthesises all results into the final answer.*
 
 The supervisor does not answer the question. It only routes. This separation of concerns is what makes the pattern scale: you can add a new specialist agent without changing the supervisor prompt, and each specialist can be optimised independently.
 
 ---
 
-## 8.3 The four specialist agents for MSDS
+## 8.3 The three specialist agents for MSDS documents
 
-We design four specialists, each focused on a specific aspect of material safety data:
+For MSDS documents, the domain decomposition maps naturally to three specialist agents. Each agent uses a different retrieval strategy because each domain has a different knowledge representation:
 
 ### 8.3.1 HazardAgent
 
 **Domain:** GHS classifications, hazard codes, hazard statements, signal words.
-**Retrieval strategy:** Knowledge graph — structured facts from `hasHazardCode` and `hazardDescription` predicates.
-**Strength:** Returns exact codes (H225, H319, H336) and their official descriptions.
+**Retrieval strategy:** Knowledge graph — structured facts from `hasHazardCode` and `hazardDescription` predicates in `MSDS_Graph/MAT-XXX`.
+**Strength:** Returns exact codes (H225, H319, H336) and their official descriptions directly from structured triples — no ambiguity, no narrative interpretation.
 
-### 8.3.2 ComplianceAgent
+### 8.3.2 SafetyAgent
 
-**Domain:** Exposure limits, regulatory thresholds, permissible concentrations.
-**Retrieval strategy:** Knowledge graph — structured facts from `hasExposureLimit` predicates.
-**Strength:** Returns precise values with units (500 ppm TWA, 750 ppm STEL) and the regulatory body that set them (OSHA, ACGIH).
+**Domain:** Precautions, first aid procedures, PPE requirements, storage and handling instructions.
+**Retrieval strategy:** Vector search — narrative text from Sections 4, 7, and 8 of the MSDS.
+**Strength:** Returns detailed procedural instructions that live in prose and are not easily reduced to structured triples. The vector store retrieves the specific paragraphs that answer the question.
 
-### 8.3.3 SafetyAgent
+### 8.3.3 ComplianceAgent
 
-**Domain:** Precautions, first aid procedures, PPE requirements, storage and handling.
-**Retrieval strategy:** Vector search — narrative text from Sections 7 and 8 of the MSDS.
-**Strength:** Returns detailed procedural instructions that are not easily reduced to structured triples.
+**Domain:** Regulatory requirements, exposure limits, permissible concentrations, legal obligations.
+**Retrieval strategy:** Both KG and vector — structured exposure limits from `hasExposureLimit` predicates, combined with narrative regulatory context from the vector store.
+**Strength:** Handles questions that span structured facts (the OSHA limit is 500 ppm TWA) and regulatory narrative (what that limit means and how to comply with it).
 
-### 8.3.4 SummaryAgent
-
-**Domain:** Synthesis.
-**Retrieval strategy:** None — reads outputs from the three specialists.
-**Role:** Combines specialist answers into a coherent final response, resolves overlaps, and structures the output for the user.
+These three agents are MSDS-specific instances of a general pattern. The same supervisor architecture deployed for purchase order documents would have different specialists: a HeaderAgent for invoice metadata, a LineItemAgent for line item details, a PaymentAgent for payment terms and status. The routing logic, the state machine, and the merge mechanism are identical. Only the specialist prompts and the KG predicates they query change.
 
 ---
 
@@ -102,30 +98,32 @@ class SupervisorState(TypedDict):
     error: Optional[str]
 ```
 
-The `sub_questions` dictionary maps specialist names to the focused questions the supervisor generated for them. `specialists_needed` is the list of specialists the supervisor decided to invoke — not every question needs all three.
+The `sub_questions` dictionary maps specialist names to the focused questions the supervisor generated for them. `specialists_needed` is the list of specialists the supervisor decided to invoke — not every question needs all three. A question purely about GHS codes routes only to HazardAgent. A question about storage and compliance routes to SafetyAgent and ComplianceAgent.
 
 ---
 
 ## 8.5 The supervisor node
 
-The supervisor's job is to read the user's question and decide which specialists are needed and what sub-question to give each one.
+The supervisor's job is to read the user's question and decide which specialists are needed and what sub-question to give each one. This is a routing decision, and routing decisions should be deterministic — temperature 0.0.
 
 ```python
 import json
 import logging
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
 logger = logging.getLogger(__name__)
-_llm = ChatVertexAI(model_name="gemini-1.5-pro", temperature=0.0, max_tokens=512)
 
-SUPERVISOR_PROMPT = """You are a routing agent for a material safety data system.
-Your job is to analyse a user's question and decide which specialist agents should answer it.
+def _get_llm():
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.0, max_tokens=512)
 
-Available specialists:
-- "hazard": answers questions about GHS hazard codes, hazard classifications, signal words, hazard statements
-- "compliance": answers questions about exposure limits, regulatory thresholds, permissible concentrations, OSHA/ACGIH limits
-- "safety": answers questions about precautions, first aid, PPE, storage, handling, spill response, fire fighting
+SUPERVISOR_PROMPT = """You are a routing agent for a material document intelligence system on SAP BTP.
+Your job is to analyse a user's question and route it to the right specialist agents.
+
+Each specialist uses a different retrieval strategy — route to the specialist whose strategy best matches the question type:
+- "hazard": answers questions about structured facts — GHS hazard codes, hazard classifications, signal words, hazard statements. Uses the knowledge graph.
+- "compliance": answers questions about regulatory requirements — exposure limits, permissible concentrations, OSHA/ACGIH thresholds, legal obligations. Uses both knowledge graph and document search.
+- "safety": answers questions about narrative procedures — first aid, PPE requirements, storage instructions, handling precautions, spill response. Uses document search.
 
 For each specialist you select, write a focused sub-question that extracts only the relevant part of the user's question.
 
@@ -154,7 +152,7 @@ def supervisor_node(state: SupervisorState) -> dict:
         material=material_number,
         question=question,
     )
-    response = _llm.invoke([HumanMessage(content=prompt)])
+    response = _get_llm().invoke([HumanMessage(content=prompt)])
     content = response.content.strip()
 
     # Strip markdown code fences if present
@@ -179,17 +177,17 @@ def supervisor_node(state: SupervisorState) -> dict:
         }
 ```
 
-The supervisor uses temperature 0.0 — routing decisions should be deterministic. The fallback on JSON parse failure routes to all specialists, which is safe (slightly slower, never wrong).
+The fallback on JSON parse failure routes to all specialists, which is safe: slightly slower, never wrong. It is better to over-route than to drop a domain.
 
 ---
 
 ## 8.6 The specialist agents
 
-Each specialist is a focused version of the hybrid RAG chains from Chapter 7, but constrained to its domain.
+Each specialist is a focused invocation of the hybrid RAG chains from Chapter 7, configured with the correct retrieval strategy for its domain.
 
 ```python
 import logging
-from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
 from agents.supervisor_state import SupervisorState
@@ -198,21 +196,24 @@ from agents.vector_chain import run_vector_chain
 from agents.state import HybridRAGState
 
 logger = logging.getLogger(__name__)
-_llm = ChatVertexAI(model_name="gemini-1.5-pro", temperature=0.1, max_tokens=1024)
+
+def _get_llm():
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1, max_tokens=1024)
 
 def _make_chain_state(sub_question: str, state: SupervisorState) -> HybridRAGState:
     """Build a HybridRAGState for a specialist's sub-question."""
     return {
         "question": sub_question,
         "material_number": state["material_number"],
-        "history": [],   # specialists don't use conversation history
+        "history": [],   # specialists do not use conversation history
         "vector_answer": "", "vector_chunks": [],
         "kg_answer": "", "kg_sparql": "", "kg_facts": [],
         "final_answer": "", "sources": [], "error": None,
     }
 
 def hazard_agent(state: SupervisorState) -> dict:
-    """KG-focused: GHS codes, classifications, hazard statements."""
+    """KG-focused: GHS codes, classifications, hazard statements.
+    Structured hazard data lives in the knowledge graph as precise triples."""
     sub_q = state["sub_questions"].get("hazard", state["question"])
     chain_state = _make_chain_state(sub_q, state)
     result = run_kg_chain(chain_state)
@@ -224,7 +225,8 @@ def hazard_agent(state: SupervisorState) -> dict:
     return {"hazard_answer": answer}
 
 def compliance_agent(state: SupervisorState) -> dict:
-    """KG-focused: exposure limits, regulatory thresholds."""
+    """KG-focused with vector fallback: exposure limits, regulatory thresholds.
+    Structured limits come from the KG; regulatory narrative comes from vector search."""
     sub_q = state["sub_questions"].get("compliance", state["question"])
     chain_state = _make_chain_state(sub_q, state)
     result = run_kg_chain(chain_state)
@@ -235,7 +237,8 @@ def compliance_agent(state: SupervisorState) -> dict:
     return {"compliance_answer": answer}
 
 def safety_agent(state: SupervisorState) -> dict:
-    """Vector-focused: precautions, first aid, PPE, storage."""
+    """Vector-focused: precautions, first aid, PPE, storage procedures.
+    Narrative safety procedures live in document prose — vector search retrieves them."""
     sub_q = state["sub_questions"].get("safety", state["question"])
     chain_state = _make_chain_state(sub_q, state)
     result = run_vector_chain(chain_state)
@@ -246,7 +249,7 @@ def safety_agent(state: SupervisorState) -> dict:
     return {"safety_answer": answer}
 ```
 
-Each specialist wraps the existing chains from Chapter 7 — they are not new implementations, just focused invocations. The HazardAgent and ComplianceAgent use the KG chain first (structured facts are exactly what they need) and fall back to the vector chain if the KG returns nothing. The SafetyAgent uses the vector chain first (narrative procedures live in prose) and falls back to KG.
+Each specialist wraps the existing chains from Chapter 7 — they are not new implementations, just focused invocations with the correct primary retrieval strategy. HazardAgent and ComplianceAgent use the KG chain first (structured facts are exactly what they need) and fall back to the vector chain if the KG returns nothing. SafetyAgent uses the vector chain first (narrative procedures live in prose) and falls back to KG.
 
 ---
 
@@ -280,7 +283,7 @@ def summary_agent(state: SupervisorState) -> dict:
         }
 
     combined = "\n\n".join(parts)
-    prompt = f"""You are a material safety expert. Multiple specialist agents have
+    prompt = f"""You are an expert assistant for SAP material documents. Multiple specialist agents have
 analysed the question below and provided their answers.
 
 {combined}
@@ -291,11 +294,11 @@ Synthesise the above into a single, well-organised, professional answer.
 - Use headings to separate sections
 - Do not repeat information that appears in multiple answers
 - Be specific with codes, values, and units
-- Write for a safety officer audience
+- Write for an enterprise user audience
 
 Answer:"""
 
-    response = _llm.invoke([HumanMessage(content=prompt)])
+    response = _get_llm().invoke([HumanMessage(content=prompt)])
     return {
         "final_answer": response.content,
         "sources": [f"{len(parts)} specialist agents"],
@@ -356,7 +359,7 @@ def build_supervisor_graph():
 supervisor_app = build_supervisor_graph()
 ```
 
-The graph is three nodes: supervisor → specialists (parallel) → summary. The `parallel_specialists_node` runs only the specialists that the supervisor selected, using a `ThreadPoolExecutor` sized to the number of active specialists.
+The graph is three nodes: supervisor → specialists (parallel) → summary. The `parallel_specialists_node` runs only the specialists that the supervisor selected, using a `ThreadPoolExecutor` sized to the number of active specialists. If the supervisor selects only two specialists for a focused question, only two threads are created — not three. This avoids unnecessary API calls.
 
 ---
 
@@ -366,11 +369,11 @@ The supervisor adds latency — one extra LLM call for routing and one for synth
 
 | Question type | Recommended agent | Why |
 |---|---|---|
-| Single-domain factual ("what are the hazard codes?") | Direct hybrid RAG (Ch 8) | Faster, no routing overhead |
-| Single-domain narrative ("what is the first aid?") | Direct hybrid RAG (Ch 8) | Faster, single retrieval pass is sufficient |
+| Single-domain factual ("what are the hazard codes?") | Direct hybrid RAG (Ch 7) | Faster, no routing overhead |
+| Single-domain narrative ("what is the first aid?") | Direct hybrid RAG (Ch 7) | Faster, single retrieval pass is sufficient |
 | Multi-domain factual + narrative ("codes AND precautions") | Supervisor | Each domain gets focused retrieval |
 | Complex regulatory + safety question | Supervisor | Prevents context dilution |
-| Real-time chat interface | Direct hybrid RAG (Ch 8) | Latency matters in chat |
+| Real-time chat interface | Direct hybrid RAG (Ch 7) | Latency matters in chat |
 | Batch compliance reports | Supervisor | Quality matters more than speed |
 
 A practical rule: if the question contains "and" connecting two distinct domains, use the supervisor.
@@ -463,27 +466,43 @@ INFO: Summary agent completed in 1.4s
 
 The three specialists run in parallel. The total wall-clock time for specialists is 2.3 seconds (the slowest), not 6.3 seconds (the sum). The summary adds 1.4 seconds, for a total of about 3.7 seconds.
 
-Compare this to the direct hybrid RAG agent with the same question: the single retrieval pass would retrieve 5 passages from across all three domains, giving the answer approximately 2 passages per domain. The supervisor gives each domain 5 full passages, producing a noticeably more detailed and better-organised answer.
+Compare this to the direct hybrid RAG agent with the same question: the single retrieval pass would retrieve 5 passages from across all three domains, giving the answer approximately 2 passages per domain. The supervisor gives each domain 5 full passages, producing a noticeably more detailed and better-organised answer — especially critical when the question spans GHS codes (structured, from KG), regulatory limits (structured, from KG), and PPE procedures (narrative, from vector store).
 
 ---
 
-## 8.12 Summary
+## 8.12 Applying the pattern to other SAP document types
+
+The multi-agent pattern shown here with MSDS specialisations applies directly to other SAP document types. The supervisor, the state machine, and the merge logic are identical — only the specialist prompts and KG predicates change.
+
+**Batch certificates:** A CertificationAgent checks test results against specification limits using the KG (structured test values and limits are natural graph triples). A SupplierAgent resolves supplier identity from the KG using supplier-linked predicates. A ComplianceAgent checks whether results satisfy regulatory boundaries by querying both the KG for the regulation threshold and the vector store for the compliance narrative.
+
+**Purchase orders and invoices:** A HeaderAgent extracts invoice metadata (vendor, date, currency, document number) from the KG, where these are stored as structured triples. A LineItemAgent retrieves individual line item details using vector search against the prose of the invoice. A PaymentAgent queries both the KG for payment term codes and the vector store for any payment instruction narrative.
+
+**Quality inspection reports:** A ResultsAgent queries the KG for structured test outcome triples (pass/fail verdicts, measured values). A SpecificationAgent queries the KG for specification limits linked to the material. A NonConformanceAgent uses vector search to retrieve the narrative description of any quality issues identified in the report.
+
+In every case: questions about structured, enumerable facts (codes, numbers, identifiers, classifications) route to KG-heavy specialists. Questions about narrative, procedural, or descriptive content route to vector-heavy specialists. Questions that span both route to specialists that use both retrieval strategies. The supervisor makes this routing decision dynamically at query time, without any hard-coded rules.
+
+---
+
+## 8.13 Summary
 
 In this chapter we extended the system from a single agent to a coordinated multi-agent system:
 
-- Identified the **complexity ceiling** of single-agent architectures for multi-domain questions
-- Designed four **specialist agents** (HazardAgent, ComplianceAgent, SafetyAgent, SummaryAgent), each focused on one domain
-- Built a **supervisor node** that uses Gemini to decompose questions and route sub-questions
+- Identified the **complexity ceiling** of single-agent architectures for multi-domain enterprise questions
+- Explained **why different document sections require different retrieval strategies** — structured KG for facts, vector search for procedures, both for compliance
+- Designed three **specialist agents** (HazardAgent, SafetyAgent, ComplianceAgent) as MSDS-specific instances of a general pattern
+- Built a **supervisor node** that uses Gemini 2.5 Flash to decompose questions and route sub-questions dynamically
 - Ran specialists **in parallel** using `ThreadPoolExecutor`, keeping wall-clock latency equal to the slowest specialist
 - Implemented the **SummaryAgent** to synthesise multi-domain answers into coherent final responses
 - Added a `/query-advanced` endpoint with a `use_supervisor` flag for caller-controlled routing
 - Defined clear criteria for **when to use the supervisor** vs the direct hybrid RAG agent
+- Showed how **the pattern generalises** to other SAP document types — batch certificates, invoices, inspection reports
 
-The multi-agent supervisor is the most architecturally sophisticated component we have built. It demonstrates a general pattern — decompose, specialise, synthesise — that applies well beyond MSDS to any multi-domain enterprise knowledge problem.
+The supervisor, state machine, and merge logic are reusable infrastructure. Deploying this pattern for a new document type requires writing three specialist prompts and identifying the relevant KG predicates — the orchestration architecture requires no changes.
 
 ---
 
-## 8.13 Checkpoint
+## 8.14 Checkpoint
 
 Before continuing to Chapter 9, verify the following:
 
@@ -522,7 +541,7 @@ curl -s -X POST http://localhost:8000/query-advanced \
   }' | python -m json.tool
 ```
 
-If the supervisor graph compiles cleanly, the routing test assigns only `["hazard"]` or a small subset of specialists to a simple question, and the curl returns a valid JSON response — the multi-agent system is working. Chapter 9 exposes this entire backend through an SAP CAP OData V4 service with a Fiori Elements UI.
+If the supervisor graph compiles cleanly, the routing test assigns only `["hazard"]` or a small subset of specialists to a simple question, and the curl returns a valid JSON response — the multi-agent system is working. Chapter 9 exposes this entire backend through the SAP CAP OData V4 service with the Fiori Elements UI.
 
 ---
 

@@ -1,10 +1,12 @@
 # Chapter 3: Vector Search on SAP HANA Cloud
 
-In Chapter 2 you stood up the platform: a HANA Cloud instance, a GCP project with Vertex AI enabled, a BTP destination, and a Python virtual environment with the right libraries. Everything is connected, but nothing useful is happening yet. In this chapter we change that.
+When a safety officer asks "What precautions are needed when handling this chemical?", they are asking a semantic question. The answer might be phrased differently in different sections of the PDF — Section 7 calls it "handling requirements", Section 8 describes it under "exposure controls", and Section 15 restates it as a regulatory obligation. Vector search finds it by meaning, not by exact keyword match — this is what makes it superior to SAP's built-in DMS full-text search for narrative document content.
 
-By the end of this chapter you will have a working vector search system on HANA Cloud. You will take a chunk of text from a Material Safety Data Sheet, turn it into a 768-dimensional vector using Google's `text-embedding-004` model, store it in a `REAL_VECTOR` column, and retrieve the most semantically similar chunks for a natural language question — all in roughly 200 lines of Python.
+The same applies to every document type the Material Document Intelligence Platform handles. An invoice might describe payment terms in a header note or in a line-item annotation. A batch certificate might record a test result in a summary table or in a methodology paragraph. Vector search surfaces the right passage regardless of where in the document it appears.
 
-We will also be honest about what vector search is bad at. The closing section of this chapter sets up the motivation for Chapter 4, where we add a knowledge graph to handle the queries that vectors get wrong.
+By the end of this chapter you will have a working vector search system on HANA Cloud. You will take a chunk of text from a material document, turn it into a 768-dimensional vector using Google's `text-embedding-004` model, store it in a `REAL_VECTOR` column, and retrieve the most semantically similar chunks for a natural language question — all in roughly 200 lines of Python.
+
+The closing section of this chapter is equally important: an honest account of what vector search cannot do. That limitation is the precise motivation for Chapter 4, where we add a knowledge graph to handle the queries that vectors get wrong.
 
 ---
 
@@ -46,7 +48,7 @@ These operators are SIMD-accelerated on the HANA engine, which means a single CP
 
 > **Tip:** For embeddings produced by Google, OpenAI, and Cohere — all of which are L2-normalized at the API boundary — `COSINE_SIMILARITY` is the right choice. Use `L2DISTANCE` only if you are working with embeddings that are not normalized.
 
-A second feature worth knowing about (we will not use it in this chapter, but it matters at scale) is the **HNSW index**. Without an index, every similarity query scans the entire table. With an HNSW index, HANA builds a graph structure that gets you approximate-nearest-neighbor results in logarithmic time. For our chapter you will not need it — five MSDS chunks search in under 10 ms — but for production deployments with millions of chunks, indexing is essential. We come back to this in Chapter 10 when we tune for production.
+A second feature worth knowing about (we will not use it in this chapter, but it matters at scale) is the **HNSW index**. Without an index, every similarity query scans the entire table. With an HNSW index, HANA builds a graph structure that gets you approximate-nearest-neighbor results in logarithmic time. For our chapter you will not need it — five document chunks search in under 10 ms — but for production deployments with millions of chunks, indexing is essential. We come back to this in Chapter 10 when we tune for production.
 
 ![HANA Cloud Central](docs/screenshots/hana/04-hana-central.png)
 *Figure: SAP HANA Cloud Central — the REAL_VECTOR column type is available in all HANA Cloud instances from version 4.0 onwards*
@@ -71,11 +73,13 @@ CREATE TABLE MSDS_VECTORS (
 );
 ```
 
-`MATERIAL_NUMBER` is the SAP material identifier — the same one you would see in MM03. We use it as a tenant key so we can search within a single material's chunks. `CHUNK_TEXT` is the raw text of the chunk; `CHUNK_INDEX` lets us reconstruct order if we need to. `EMBEDDING` is the 768-dimensional vector we computed from `CHUNK_TEXT`.
+> **About the table name:** The table is named MSDS_VECTORS because the reference implementation was first built for MSDS documents. In a multi-document-type deployment, you would use DOCUMENT_VECTORS with an additional DOC_TYPE column, or a separate table per type. The core SQL pattern — REAL_VECTOR column, COSINE_SIMILARITY search, MATERIAL_NUMBER filter — is identical regardless of document type.
+
+`MATERIAL_NUMBER` is the SAP material identifier — the same Material Number you would look up in SAP MM via transaction MM03. In the Material Document Intelligence Platform, the CAP service layer validates this value against real S/4HANA product master data via API_PRODUCT_SRV before accepting any document upload. This ensures that vectors are always anchored to a legitimate, active SAP material — not a free-text label that could drift out of sync with the product master. We use it as the tenant key so we can search within a single material's chunks. `CHUNK_TEXT` is the raw text of the chunk; `CHUNK_INDEX` lets us reconstruct order if we need to. `EMBEDDING` is the 768-dimensional vector we computed from `CHUNK_TEXT`.
 
 You could just run this `CREATE TABLE` statement once with the SAP HANA Database Explorer and be done with it. But there is a subtle reason not to.
 
-The dimension `768` is hardcoded into the schema. If at any point you decide to switch from `text-embedding-004` (768 dim) to `text-embedding-3-large` (3072 dim), or to a SAP-internal embedding model with a different dimension, your insert will fail and you will need to drop and recreate the table. Worse, that hardcoded number lives in your DDL while the actual dimension lives in the model — two sources of truth that can drift apart.
+The dimension `768` is hardcoded into the schema. If at any point you decide to switch from `text-embedding-004` (768 dim) to a model with a different output dimension, your insert will fail and you will need to drop and recreate the table. Worse, that hardcoded number lives in your DDL while the actual dimension lives in the model — two sources of truth that can drift apart.
 
 The cleaner pattern is **lazy initialization**: don't create the table until the first time you embed something, then read the dimension from the embedding response and use it in the `CREATE TABLE`. This way your code has exactly one source of truth — the model's actual output dimension at runtime.
 
@@ -117,7 +121,7 @@ Three things to note:
 
 ## 3.4 Calling text-embedding-004 from Python
 
-We talked about embeddings as a concept; now we need to actually produce one. The Vertex AI Python SDK gives us two lines of meaningful code.
+We talked about embeddings as a concept; now we need to actually produce one. The `langchain_google_genai` library gives us a clean interface to Google's embedding models without the operational complexity of a dedicated Vertex AI SDK setup.
 
 Looking at `agents/srv/vertex_srv.py`:
 
@@ -165,7 +169,7 @@ The pattern here mirrors the lazy table creation pattern. `vertexai.init()` is g
 
 `embed_text()` is the function the rest of our application uses. It takes a string and returns a Python list of 768 floats. Internally, the SDK takes a list of strings, so we pass `[text]` and unwrap the first result with `embeddings[0].values`.
 
-> **Note:** Vertex AI's embedding endpoint accepts batches of up to 250 texts per call. For a one-off MSDS upload that ends up with maybe 30 chunks, the savings of batching are negligible compared to the simplicity of one-text-per-call. We will revisit batching in Chapter 10 when we look at bulk-loading historical documents.
+> **Note:** Vertex AI's embedding endpoint accepts batches of up to 250 texts per call. For a one-off document upload that ends up with maybe 30 chunks, the savings of batching are negligible compared to the simplicity of one-text-per-call. We will revisit batching in Chapter 10 when we look at bulk-loading historical documents.
 
 You should also be aware that Vertex AI charges per 1,000 input characters for embeddings (about $0.000025 per 1,000 chars at the time of writing). A typical 12-page MSDS PDF has roughly 30,000 characters and chunks into ~30 pieces. The cost to embed it is approximately $0.0008 — less than a tenth of a cent. Search-time embeddings (one per question) are equally cheap.
 
@@ -203,7 +207,7 @@ A few engineering notes:
 
 - We pass `material_number`, `chunk_text`, `chunk_index`, and the embedding string as positional parameters. This is parameterized SQL — no concatenation of user data into the query, so SQL injection is impossible.
 - `_ensure_table(len(embedding))` runs on every call but exits early after the first invocation thanks to the `_table_created` flag.
-- We commit per insert. For uploading a single MSDS this is fine. For bulk uploads, batch your inserts and commit once at the end — Chapter 10 covers this.
+- We commit per insert. For uploading a single document this is fine. For bulk uploads, batch your inserts and commit once at the end — Chapter 10 covers this.
 
 > **Tip:** If you want to verify what got stored, the SAP HANA Database Explorer is your friend. Open the `MSDS_VECTORS` table, click "Open Data", and you will see your rows. The `EMBEDDING` column displays as a truncated array preview, but you can click into a cell to see the full 768 values.
 
@@ -227,7 +231,7 @@ ORDER BY SCORE DESC;
 
 Five clauses, each doing real work. Let's read them in execution order.
 
-**`WHERE MATERIAL_NUMBER = ?`** filters the table to chunks belonging to a specific material. Without this, our search would compete across every chunk of every document in the table — fine when you have one MSDS, fatal when you have ten thousand. By filtering early, HANA scans only the rows that could possibly match. This is the one place in the query where the optimizer can use a B-tree index, so make sure you have one on `MATERIAL_NUMBER` once you go to production. (We add it in Chapter 10.)
+**`WHERE MATERIAL_NUMBER = ?`** filters the table to chunks belonging to a specific material. Without this, our search would compete across every chunk of every document in the table — fine when you have one document, fatal when you have ten thousand. By filtering early, HANA scans only the rows that could possibly match. This is the one place in the query where the optimizer can use a B-tree index, so make sure you have one on `MATERIAL_NUMBER` once you go to production. (We add it in Chapter 10.)
 
 **`COSINE_SIMILARITY(EMBEDDING, TO_REAL_VECTOR(?))`** is the per-row computation. For each row passing the `WHERE` filter, HANA takes the stored `EMBEDDING` vector, the question's vector (parsed from the bound parameter), and computes the cosine of the angle between them. The result is a `DOUBLE` between roughly 0.0 and 1.0 — higher means more similar. This is where the SIMD acceleration earns its keep.
 
@@ -239,7 +243,7 @@ Five clauses, each doing real work. Let's read them in execution order.
 
 The order of operations matters. HANA's optimizer is smart enough to push the `WHERE` filter down to the table scan (so we never compute similarity for chunks belonging to other materials), but you should still write your queries with the filter explicit. Don't compute similarity across the whole table and filter the result.
 
-> **Important:** A common mistake is to forget the `WHERE` clause when prototyping with one material, then keep that habit when you add a second. Every query in your application should filter by `MATERIAL_NUMBER`. There is no business reason a question about Acetone should ever surface a chunk about Sulfuric Acid, even if some words happen to overlap.
+> **Important:** A common mistake is to forget the `WHERE` clause when prototyping with one material, then keep that habit when you add a second. Every query in your application should filter by `MATERIAL_NUMBER`. There is no business reason a question about one material should ever surface a chunk from a different material's document, even if some words happen to overlap.
 
 The Python wrapper:
 
@@ -269,7 +273,7 @@ We embed the question (one Vertex AI call), build the parameter string the same 
 
 ---
 
-## 3.7 Chunking Strategy for MSDS Documents
+## 3.7 Chunking Strategy for Material Documents
 
 We have skipped over the most consequential design decision in any RAG system: how do you split a document into chunks?
 
@@ -280,9 +284,19 @@ The trade-off is fundamental:
 - **Smaller chunks** (a sentence each) give precise retrieval — when the model returns chunk 47, you know exactly which sentence it cared about. But you lose context. A sentence like "It must be stored away from this material" is meaningless without the surrounding paragraph.
 - **Larger chunks** (a full page) preserve context but introduce noise. A paragraph about flammability that also mentions "appropriate PPE" might score highly for a PPE question even though the actual PPE answer is on a different page.
 
-For MSDS documents specifically, we are lucky: the OSHA 16-section format gives us natural boundaries. Section 4 is always First Aid. Section 7 is always Handling and Storage. Section 8 is always Exposure Controls and PPE. These sections are typically 100–300 words — exactly the right size.
+The right chunking strategy adapts to document structure. Different document types that flow through the Material Document Intelligence Platform have different natural boundaries.
 
-Our chunking rule, which we will implement in Chapter 5 when we build `doc_srv.py`:
+For **MSDS documents**, the OSHA 16-section format provides the primary boundary. Section 4 is always First Aid. Section 7 is always Handling and Storage. Section 8 is always Exposure Controls and PPE. These sections are typically 100–300 words — exactly the right size. We use OSHA section headers as the primary split point.
+
+For **invoices**, the natural boundary is the line item block — each item group (description, quantity, unit price, total) forms one chunk. Header data (vendor, PO reference, payment terms) becomes its own chunk.
+
+For **batch certificates**, the natural boundary is the test result section — each analytical parameter and its pass/fail result becomes a chunk. Summary sections and methodology notes are separate chunks.
+
+For **maintenance manuals**, procedure steps are the natural boundary — each numbered step with its safety caution and tooling note stays together as a chunk.
+
+The chunking approach adapts to document structure. The vector storage and retrieval code — `MSDS_VECTORS`, `store_embedding`, `search_similar` — does not change. The same HANA SQL runs identically regardless of whether the chunk came from an MSDS flammability section or an invoice payment terms block.
+
+Our chunking rule for MSDS documents, which we will implement in Chapter 5 when we build `doc_srv.py`:
 
 1. **Primary boundary:** OSHA section header. Each numbered section becomes one chunk.
 2. **Secondary boundary:** if a section exceeds ~500 tokens, split on the next paragraph boundary inside it.
@@ -294,9 +308,9 @@ Token-wise, our targets are:
 - Maximum chunk size: ~500 tokens (anything larger gets noisy)
 - Overlap: ~50 tokens
 
-> **Tip:** Tokens, not characters. A token is roughly 4 characters of English text or about 0.75 of a word. Vertex AI's `text-embedding-004` accepts up to 2,048 tokens per embedding call, so we have plenty of headroom — 500 tokens is well under the limit.
+> **Tip:** Tokens, not characters. A token is roughly 4 characters of English text or about 0.75 of a word. `text-embedding-004` accepts up to 2,048 tokens per embedding call, so we have plenty of headroom — 500 tokens is well under the limit.
 
-For the test in this chapter we cheat: we hand-write five short chunks that look like real MSDS sentences. The full document chunker arrives in Chapter 5. The point of the test is to validate the round-trip: embed → store → embed-question → search → score.
+For the test in this chapter we hand-write five short chunks that look like real document sentences. The full document chunker arrives in Chapter 5. The point of the test is to validate the round-trip: embed → store → embed-question → search → score.
 
 ---
 
@@ -417,7 +431,7 @@ def get_connection():
 
 ---
 
-## 3.9 Testing: One MSDS, Two Questions
+## 3.9 Testing: Business Questions Across Document Types
 
 Time to see it work end-to-end. Create the file `agents/test_vector.py`:
 
@@ -508,7 +522,9 @@ Vector search: OK
 
 Note the absolute scores. The top match for a well-targeted question lands around 0.80–0.85. This is the band where you should expect "good" semantic matches with `text-embedding-004`. Anything above 0.90 usually means near-paraphrase. Anything below 0.50 usually means the model is reaching.
 
-> **Tip:** The scores are reproducible only if you re-embed identical text against the same model version. Vertex AI may update the model under the same name; if your scores drift over time, that is the most likely cause. Pin to a specific version (`textembedding-gecko@003`-style identifiers exist) if reproducibility matters.
+The same vector infrastructure serves every document type without modification. A storage requirements question for an MSDS returns the Section 7 chunk. An approved quantity question for an invoice returns the line-item summary chunk. A viscosity test question for a batch certificate returns the test result chunk. The question changes. The search code does not. This is the commercial value of building on HANA's `REAL_VECTOR` column rather than on a document-type-specific text search engine.
+
+> **Tip:** The scores are reproducible only if you re-embed identical text against the same model version. Vertex AI may update the model under the same name; if your scores drift over time, that is the most likely cause. Pin to a specific version if reproducibility matters.
 
 If you see authentication errors at this point, double-check that `GOOGLE_APPLICATION_CREDENTIALS` points to your `gcp-sa-key.json` file and that the service account has the `Vertex AI User` role. The HANA side is more forgiving — connection errors usually surface as "host not reachable", which means a typo in `HANA_HOST` or a network rule blocking outbound 443.
 
@@ -551,11 +567,11 @@ Three categories of question hit this limitation hard:
 2. **Aggregations and counts.** "How many of my materials have flash point below 0°C?" is impossible for vector search — there is no "count" embedding direction. You need structured query.
 3. **Negation and exclusion.** "Show me MSDSs that do *not* require respiratory protection." Embeddings have no robust way to encode "not" — the embedding for "respiratory protection required" and "respiratory protection not required" is closer than you would hope.
 
-The good news: SAP customers running on HANA have always thought in structured terms. Materials, hazard codes, GHS classifications — these are not free text. They are master data. They live in tables with foreign keys. They are the kind of thing a knowledge graph models naturally.
+SAP customers running on HANA have always thought in structured terms. Materials, hazard codes, GHS classifications, batch test results, invoice amounts — these are not free text. They are master data. They live in tables with foreign keys. They are the kind of thing a knowledge graph models naturally.
 
-That is the bridge into Chapter 4. We will take the same MSDS document, extract its structured facts (material number, hazard codes, GHS categories, regulatory codes) into RDF triples, store them in HANA's graph engine, and query them with SPARQL. When the user asks "What is the GHS hazard code for acetone?", we will return "H225" with full confidence — not by guessing from a 0.65 cosine similarity, but by traversing a graph relationship.
+That is the bridge into Chapter 4. We will take the same material document, extract its structured facts into RDF triples, store them in HANA's graph engine, and query them with SPARQL. When the regulatory auditor asks "What is the GHS hazard classification for this chemical?", we will return "H225" with full confidence — not by guessing from a 0.65 cosine similarity, but by traversing a graph relationship that was set when the document was ingested.
 
-The full Hybrid RAG agent in Chapter 7 runs both retrievers in parallel and lets a routing classifier decide which answer to trust. Vector search owns the fuzzy questions. The knowledge graph owns the precise ones. Neither is sufficient alone; together they cover the question space MSDS users actually ask.
+The full Hybrid RAG agent in Chapter 7 runs both retrievers in parallel and lets a routing classifier decide which answer to trust. Vector search owns the fuzzy questions. The knowledge graph owns the precise ones. Neither is sufficient alone; together they cover the question space enterprise document users actually ask.
 
 ---
 
@@ -567,7 +583,8 @@ In this chapter you built a working vector search system on HANA Cloud. The majo
 - **`REAL_VECTOR` is HANA's native vector column type.** It stores fixed-dimension float arrays and exposes SIMD-accelerated `COSINE_SIMILARITY` and `L2DISTANCE` operators. You do not need a separate vector database.
 - **Lazy table initialization keeps your schema in sync with your model.** Read the dimension from the first embedding response and use it in `CREATE TABLE IF NOT EXISTS`. Never hardcode the dimension in DDL.
 - **The cosine similarity query has five clauses, each load-bearing.** `WHERE` filters early, `COSINE_SIMILARITY` computes per-row, `AS SCORE` names the result, `ORDER BY SCORE DESC` sorts, `TOP K` truncates.
-- **Chunking is the most consequential design decision.** For MSDS documents, OSHA section boundaries are natural; target 300–500 tokens per chunk with 50-token overlap.
+- **Chunking adapts to document structure; the storage code does not.** MSDS documents use OSHA section boundaries. Invoices use line-item blocks. Batch certificates use test result sections. The same `MSDS_VECTORS` table and `search_similar` function serve all document types.
+- **The `MATERIAL_NUMBER` column is the anchor to SAP MM.** The CAP layer validates it against S/4HANA product master via API_PRODUCT_SRV before accepting uploads. Every vector in the table is traceable to a real, validated SAP material.
 - **Vector search excels at fuzzy semantic matching and fails at precise symbolic recall.** The GHS code problem motivates the knowledge graph in Chapter 4.
 
 The codebase now has working `hdb_srv.py`, `vertex_srv.py`, and `vector_srv.py` modules, plus a passing `test_vector.py` script. The vector retrieval half of the Hybrid RAG agent is live.
@@ -584,6 +601,6 @@ Before moving on to Chapter 4, verify the following:
 - [ ] Opening the `MSDS_VECTORS` table in the SAP HANA Database Explorer shows five rows for `MATERIAL_NUMBER = 'ACETONE-TEST-001'`.
 - [ ] The third (optional) test — querying for "What is the GHS hazard code for acetone?" — returns the GHS chunk at the top, but with a noticeably lower score (~0.65). You understand why.
 
-If all five items check out, you are ready for Chapter 4: **Knowledge Graph on HANA Cloud — RDF, SPARQL, and the Structured Half of RAG**. We will set up HANA's graph engine, load RDF triples extracted from the same Acetone MSDS, and query them with SPARQL — solving the GHS code problem in the most direct way possible.
+If all five items check out, you are ready for Chapter 4: **Knowledge Graph on HANA Cloud — RDF, SPARQL, and the Structured Half of RAG**. We will set up HANA's graph engine, load RDF triples extracted from the same material document, and query them with SPARQL — solving the GHS code problem in the most direct way possible.
 
 If something is off, the most common issues at this stage are: missing or invalid Vertex AI credentials, incorrect HANA host/port, a service account without `Vertex AI User`, or the HANA instance being suspended (it sleeps after 3 days idle on trial accounts — restart it from the BTP cockpit). Fix and re-run `test_vector.py` until you see the expected output. The next chapter assumes a working `vector_srv.py`.

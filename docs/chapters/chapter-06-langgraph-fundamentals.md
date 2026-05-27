@@ -1,6 +1,6 @@
 # Chapter 6: LangGraph Fundamentals
 
-In Chapter 5 we built a document ingestion pipeline that processes PDFs into both a vector store and a knowledge graph simultaneously. We now have data — rich, structured, searchable data — in SAP HANA Cloud. The next question is: how do we build an agent that reasons over it?
+In Chapter 5 we built a document ingestion pipeline that processes PDFs into both a vector store and a knowledge graph simultaneously. We now have data — rich, structured, searchable data — in SAP HANA Cloud. The next question is: how do we build an agent that reasons over it in a way that is auditable, inspectable, and safe to deploy on BTP?
 
 A plain LangChain chain would work for a single retrieval followed by a single LLM call. But the system we need is more complex than that. It needs to run two retrieval strategies in parallel, decide how to merge their results, handle retries when SPARQL returns empty results, maintain conversation history across turns, and expose all of this over a single HTTP endpoint. A linear chain cannot express those decisions. We need something that can branch, loop, and conditionally route based on what it finds.
 
@@ -10,7 +10,28 @@ This chapter introduces LangGraph from first principles. We build a simple quest
 
 ---
 
-## 6.1 Why LangChain chains are not enough
+## 6.1 Why LangGraph is SAP's recommended orchestration approach for BTP agents
+
+Enterprise AI governance requires more than a correct answer. It requires an auditable trail: which system provided which data, which decision was made at which step, and why. When an auditor asks "how did the system determine that the exposure limit was 500 ppm?", you need to be able to show the SPARQL query, the HANA result, and the LLM call that synthesised it into natural language. A black-box chain gives you none of that. A LangGraph StateGraph gives you all of it.
+
+LangGraph models your agent as a directed graph rather than a list. Every node in the graph is a named Python function. Every state transition is an explicit edge. Every intermediate result is captured in the graph state. LangGraph traces can be exported to LangSmith, where each run shows a complete tree: which nodes executed, in what order, what the state contained at each step, and the exact prompts sent to Gemini. This execution trace is the enterprise AI governance artefact.
+
+The conceptual mapping to SAP BTP workflow constructs is direct:
+
+| LangGraph concept | BTP workflow equivalent |
+|---|---|
+| `AgentState` (TypedDict) | BTP Workflow context object |
+| Node (Python function) | Workflow service task step |
+| Edge | Sequence flow between steps |
+| Conditional edge | Exclusive gateway (XOR decision) |
+| `StateGraph.compile()` | Deployed workflow definition |
+| `app.invoke(state)` | Workflow instance execution |
+
+SAP's own internal AI agent frameworks use LangGraph for exactly this reason: the execution model is transparent, the state is inspectable at any point, and the graph definition is a first-class artefact that can be reviewed, versioned, and audited like any other software component.
+
+---
+
+## 6.2 Why LangChain chains are not enough
 
 LangChain introduced the concept of a chain: a sequence of components where the output of one feeds the input of the next. For many tasks — retrieve a passage, summarise it, return the result — a chain is exactly right. It is simple, readable, and easy to test.
 
@@ -22,21 +43,23 @@ The problem arises when your logic is not a sequence. Consider what our hybrid R
 | Retry SPARQL generation if results are empty | No — chains have no loops |
 | Route to different merge strategies based on what was found | No — chains have no conditional branches |
 | Pass conversation history into every step | Awkward — requires passing state manually |
-| Stream partial results to the UI as they arrive | Limited |
+| Produce an auditable execution trace | No — chain execution is opaque |
 
-LangGraph solves every one of these by modelling your agent as a directed graph rather than a list. Nodes are Python functions. Edges are connections between them. Conditional edges let the graph branch based on the current state. The graph can loop. It can run nodes in parallel. It can stop and stream intermediate results.
+LangGraph solves every one of these by modelling your agent as a directed graph rather than a list. Nodes are Python functions. Edges are connections between them. Conditional edges let the graph branch based on the current state. The graph can loop. It can run nodes in parallel. It can capture and stream intermediate results.
 
 > **Note:** LangGraph is built on top of LangChain. You still use LangChain components — `ChatVertexAI`, `tool` decorators, message types — but LangGraph provides the execution engine that orchestrates them.
 
 ---
 
-## 6.2 Core concepts
+## 6.3 Core concepts
 
 Before writing any code, here are the four concepts you need to hold in your head.
 
-### 6.2.1 State
+### 6.3.1 State
 
 State is the memory of your agent for a single run. It is a Python `TypedDict` — a dictionary where every key has a declared type. Every node in the graph reads from state and writes back to state. State is the only way nodes communicate with each other.
+
+In BTP workflow terms, state is the context object that a workflow instance carries from step to step. When you inspect a running workflow in BTP Process Automation, you see this context. In LangGraph, when you inspect a run in LangSmith, you see the state at each node boundary. The concept is identical.
 
 ```python
 from typing import TypedDict, List
@@ -49,9 +72,9 @@ class AgentState(TypedDict):
 
 When you invoke the graph, you pass an initial state. When the graph finishes, you receive the final state. Everything that happened in between is recorded there.
 
-### 6.2.2 Nodes
+### 6.3.2 Nodes
 
-A node is a Python function that receives the current state and returns a partial update to it. LangGraph merges the update into the state before passing it to the next node.
+A node is a Python function that receives the current state and returns a partial update to it. LangGraph merges the update into the state before passing it to the next node. In BTP workflow terms, a node is a service task — it does one focused piece of work and writes its result to the workflow context.
 
 ```python
 def my_node(state: AgentState) -> dict:
@@ -63,17 +86,17 @@ def my_node(state: AgentState) -> dict:
 
 The function does not need to return the entire state — only the keys it wants to change. LangGraph merges the returned dict into the existing state automatically.
 
-### 6.2.3 Edges
+### 6.3.3 Edges
 
-An edge connects two nodes. When node A finishes, LangGraph follows the edge to node B and runs it next.
+An edge connects two nodes. When node A finishes, LangGraph follows the edge to node B and runs it next. This is a sequence flow in BTP workflow terms — deterministic, always-true routing.
 
 ```python
 graph.add_edge("node_a", "node_b")
 ```
 
-### 6.2.4 Conditional edges
+### 6.3.4 Conditional edges
 
-A conditional edge calls a routing function after a node completes. The routing function inspects the state and returns a string that names the next node to run.
+A conditional edge calls a routing function after a node completes. The routing function inspects the state and returns a string that names the next node to run. In BTP workflow terms, this is an exclusive gateway: examine the context, choose one outgoing sequence flow.
 
 ```python
 def route(state: AgentState) -> str:
@@ -91,19 +114,19 @@ This is how loops and branches are expressed in LangGraph.
 
 ---
 
-## 6.3 Installation and project layout
+## 6.4 Installation and project layout
 
-Install LangGraph and the Vertex AI integration:
+Install LangGraph and the Google GenAI integration. Note the correct import: `langchain_google_genai`, not `langchain_google_vertexai` — the VertexAI variant is deprecated for the Gemini model family.
 
 ```bash
-pip install langgraph langchain-google-vertexai langchain-core
+pip install langgraph langchain-google-genai langchain-core
 ```
 
 Add these to `agents/requirements.txt`:
 
 ```
 langgraph>=0.2.0
-langchain-google-vertexai>=2.0.0
+langchain-google-genai>=2.0.0
 langchain-core>=0.3.0
 ```
 
@@ -120,14 +143,14 @@ agents/
 
 ---
 
-## 6.4 Building the state and nodes
+## 6.5 Building the state and nodes
 
 Open `agents/agents/simple_qa_agent.py`. We start with the state definition and two nodes.
 
 ```python
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, END
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage
 # ── State ─────────────────────────────────────────────────────────────────────
 class AgentState(TypedDict):
@@ -137,7 +160,8 @@ class AgentState(TypedDict):
     messages: List[dict]
     retry_count: int
 # ── LLM ───────────────────────────────────────────────────────────────────────
-llm = ChatVertexAI(model_name="gemini-1.5-pro", temperature=0.1, max_tokens=1024)
+def _get_llm():
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1, max_tokens=1024)
 # ── Nodes ──────────────────────────────────────────────────────────────────────
 def retrieve_node(state: AgentState) -> dict:
     """Stub retriever — replaced by vector + KG chains in Chapter 7."""
@@ -158,7 +182,7 @@ def answer_node(state: AgentState) -> dict:
         else:
             messages.append(AIMessage(content=msg["content"]))
 
-    prompt = f"""You are an expert assistant for Material Safety Data Sheets.
+    prompt = f"""You are an expert assistant for SAP material documents — you help users find information across PDF documents linked to SAP Material Numbers.
 
 Context from the knowledge base:
 {context}
@@ -169,15 +193,17 @@ If the context does not contain enough information, say so clearly.
 Question: {question}"""
 
     messages.append(HumanMessage(content=prompt))
-    response = llm.invoke(messages)
+    response = _get_llm().invoke(messages)
     return {"answer": response.content}
 ```
 
 Two things to notice. First, `retrieve_node` is a deliberate stub — it returns a placeholder string. We build the real retrieval in Chapter 7; this stub lets us test the graph structure now without needing a live HANA connection. Second, `answer_node` builds the conversation history from the `messages` list in state. This is how multi-turn conversations work: the caller passes previous turns in the initial state, and the node includes them in the prompt.
 
+LLM instantiation uses a lazy getter `_get_llm()` rather than a module-level variable. This prevents the LLM client from being initialised at import time, which would fail in environments where credentials are not yet available — a common issue in BTP CF where environment variables are injected after application startup.
+
 ---
 
-## 6.5 Wiring the graph
+## 6.6 Wiring the graph
 
 Add the graph construction below the node functions:
 
@@ -222,16 +248,16 @@ Expected output (with stub retriever):
 
 ```
 Based on the provided context, I don't have specific hazard codes for acetone.
-The context contains a placeholder rather than actual MSDS data. Once the
-knowledge base is populated with real MSDS documents, I will be able to
-retrieve and report the specific GHS hazard codes for acetone.
+The context contains a placeholder rather than actual document data. Once the
+knowledge base is populated with real documents linked to the material number,
+I will be able to retrieve and report the specific information.
 ```
 
-The agent runs, reaches Vertex AI, and gives an honest answer about the stub context. That is the graph working correctly.
+The agent runs, reaches Gemini 2.5 Flash, and gives an honest answer about the stub context. That is the graph working correctly.
 
 ---
 
-## 6.6 Adding a conditional retry edge
+## 6.7 Adding a conditional retry edge
 
 Real retrieval can fail — SPARQL returns empty results, an embedding call times out. We need to be able to retry. Add a check node and a routing function:
 
@@ -263,6 +289,8 @@ def route_after_check(state: AgentState) -> str:
         return "retry"
     return "done"
 ```
+
+This is a conditional edge acting as a decision gateway. The routing function reads two state fields — `answer` and `retry_count` — and returns one of two named outcomes. LangGraph maps those outcomes to the next node using the dictionary passed to `add_conditional_edges`. This is identical to how an exclusive gateway in BTP Process Automation evaluates a context condition and routes to one of several outgoing flows.
 
 Update `build_graph` to include the check node and conditional edge:
 
@@ -296,21 +324,21 @@ The graph now has a loop: retrieve → answer → check → (retry: back to retr
 
 ---
 
-## 6.7 The StateGraph visualised
+## 6.8 The StateGraph visualised
 
 The graph we built in this chapter has three nodes and one conditional loop:
 
 ![LangGraph StateGraph Flow](docs/screenshots/diagrams/07-langgraph-state-graph.png)
-*Figure 7.1: The simple Q&A agent's StateGraph — retrieve feeds answer, which feeds the check node. The check node either loops back to retrieve (on low-quality answers, up to 2 retries) or terminates at END. The dashed box on the right shows the AgentState structure that flows through every node.*
+*Figure 6.1: The simple Q&A agent's StateGraph — retrieve feeds answer, which feeds the check node. The check node either loops back to retrieve (on low-quality answers, up to 2 retries) or terminates at END. The dashed box on the right shows the AgentState structure that flows through every node.*
 
 ---
 
-## 6.8 The complete simple_qa_agent.py
+## 6.9 The complete simple_qa_agent.py
 
 ```python
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, END
-from langchain_google_vertexai import ChatVertexAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage
 
 class AgentState(TypedDict):
@@ -320,7 +348,8 @@ class AgentState(TypedDict):
     messages:    List[dict]
     retry_count: int
 
-llm = ChatVertexAI(model_name="gemini-1.5-pro", temperature=0.1, max_tokens=1024)
+def _get_llm():
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1, max_tokens=1024)
 
 def retrieve_node(state: AgentState) -> dict:
     question = state["question"]
@@ -332,7 +361,7 @@ def answer_node(state: AgentState) -> dict:
         cls = HumanMessage if msg["role"] == "user" else AIMessage
         messages.append(cls(content=msg["content"]))
 
-    prompt = f"""You are an expert assistant for Material Safety Data Sheets.
+    prompt = f"""You are an expert assistant for SAP material documents — you help users find information across PDF documents linked to SAP Material Numbers.
 
 Context:
 {state['context']}
@@ -340,7 +369,7 @@ Context:
 Question: {state['question']}
 Answer:"""
     messages.append(HumanMessage(content=prompt))
-    return {"answer": llm.invoke(messages).content}
+    return {"answer": _get_llm().invoke(messages).content}
 
 def check_answer_node(state: AgentState) -> dict:
     low = ["don't have", "no information", "cannot find", "not available", "placeholder"]
@@ -379,7 +408,7 @@ if __name__ == "__main__":
 
 ---
 
-## 6.9 Tool use in LangGraph
+## 6.10 Tool use in LangGraph
 
 LangGraph supports tools — Python functions that the LLM can choose to call. For the hybrid RAG agent, we will not use the LangGraph tool mechanism (we use direct parallel dispatch instead, as you will see in Chapter 7). But understanding tools is useful if you extend the agent later.
 
@@ -401,7 +430,7 @@ Bind tools to the LLM and use `ToolNode` for execution:
 from langgraph.prebuilt import ToolNode
 
 tools = [get_hazard_codes]
-llm_with_tools = llm.bind_tools(tools)
+llm_with_tools = _get_llm().bind_tools(tools)
 tool_node = ToolNode(tools)
 
 graph.add_node("tools", tool_node)
@@ -415,11 +444,11 @@ graph.add_edge("tools", "answer")
 
 This creates a ReAct loop: the LLM decides whether to call a tool, the tool runs, and the result feeds back into the next LLM call.
 
-> **Note:** Chapter 7 intentionally avoids this ReAct pattern for the main retrieval. We run both vector and KG chains on every query, regardless of what the LLM might choose. This gives deterministic latency and prevents the LLM from skipping a retrieval path it thinks is unnecessary.
+> **Note:** Chapter 7 intentionally avoids this ReAct pattern for the main retrieval. We run both vector and KG chains on every query, regardless of what the LLM might choose. This gives deterministic latency and prevents the LLM from skipping a retrieval path it thinks is unnecessary — a critical property for enterprise systems where consistent, complete answers matter more than adaptive efficiency.
 
 ---
 
-## 6.10 Streaming responses
+## 6.11 Streaming responses
 
 LangGraph can stream state updates as they happen. This is valuable when queries take several seconds — the user sees progress rather than a blank screen.
 
@@ -446,13 +475,13 @@ Expected output:
 [check] completed
 ```
 
-> **Tip:** In the FastAPI service, pipe the stream to a Server-Sent Events (SSE) response using `StreamingResponse`. The Fiori UI can consume the stream and update the chat interface progressively. We implement this in Chapter 9.
+> **Tip:** In the FastAPI service, pipe the stream to a Server-Sent Events (SSE) response using `StreamingResponse`. The Fiori UI can consume the stream and update the chat interface progressively as each node completes. We implement this in Chapter 9.
 
 ---
 
-## 6.11 Debugging with LangSmith
+## 6.12 Debugging with LangSmith
 
-LangSmith is LangChain's observability platform. It records every LangGraph run — inputs, outputs, intermediate states, LLM calls, latency, and token counts. It is free for individual developers.
+LangSmith is LangChain's observability platform. It records every LangGraph run — inputs, outputs, intermediate states, LLM calls, latency, and token counts. For an enterprise AI governance use case, LangSmith is the audit log.
 
 Set three environment variables:
 
@@ -461,8 +490,6 @@ export LANGCHAIN_TRACING_V2=true
 export LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
 export LANGCHAIN_API_KEY=your-api-key-here
 ```
-
-Get a free API key at `smith.langchain.com`. Once set, every `app.invoke()` and `app.stream()` call is automatically traced.
 
 In your BTP CF `manifest.yml`, add the same variables:
 
@@ -475,13 +502,13 @@ applications:
       LANGCHAIN_API_KEY: ((langchain-api-key))
 ```
 
-Use a BTP User-Provided Service to supply the API key without storing it in the manifest. In the LangSmith dashboard you will see a tree view of each run: which nodes executed, in what order, how long each took, and the exact prompt sent to Gemini. When Chapter 7's parallel chains run, you will see two branches executing simultaneously.
+Use a BTP User-Provided Service to supply the API key without storing it in the manifest. In the LangSmith dashboard you will see a tree view of each run: which nodes executed, in what order, how long each took, and the exact prompt sent to Gemini. When Chapter 7's parallel chains run, you will see two branches executing simultaneously — a visual confirmation that the `ThreadPoolExecutor` parallelism is working.
 
-> **Tip:** Tag your runs in `app.invoke(config={"metadata": {"material_number": material_number}})` and filter by `metadata.material_number` in LangSmith to see all queries against a specific document.
+> **Tip:** Tag your runs in `app.invoke(config={"metadata": {"material_number": material_number}})` and filter by `metadata.material_number` in LangSmith to see all queries against a specific SAP Material Number. This is the query-level audit trail that enterprise governance teams require.
 
 ---
 
-## 6.12 Why stateless works on BTP Cloud Foundry
+## 6.13 Why stateless works on BTP Cloud Foundry
 
 A common concern when deploying LangGraph to Cloud Foundry is: what happens to agent state when you scale to multiple instances?
 
@@ -496,14 +523,14 @@ LangGraph state is in-memory for a single request. When `app.invoke()` returns, 
 | Two users query simultaneously | Each gets their own independent in-memory state |
 | Conversation history | Passed in `messages` field of every request body by the caller |
 
-The conversation history pattern — where the client sends previous turns in every request — is the key. The frontend stores the last N messages and sends them with each new question.
+The conversation history pattern — where the client sends previous turns in every request — is the key. The CAP Fiori frontend stores the last N messages and sends them with each new question.
 
 ```python
 # Frontend sends history on every request
 # POST /query
 {
   "question": "And what about the flash point?",
-  "material_number": "ACE001",
+  "material_number": "MAT-001",
   "history": [
     {"role": "user",      "content": "What are the hazard codes for acetone?"},
     {"role": "assistant", "content": "The GHS hazard codes for acetone are H225, H319, and H336."}
@@ -515,24 +542,24 @@ The agent picks up the conversation exactly where it left off — without any se
 
 ---
 
-## 6.13 Summary
+## 6.14 Summary
 
-In this chapter we built a LangGraph agent from scratch:
+In this chapter we built a LangGraph agent from scratch and grounded every concept in SAP BTP enterprise terms:
 
-- Defined **state** as a `TypedDict` that flows through every node
-- Wrote **nodes** as plain Python functions that read state and return partial updates
-- Connected nodes with **edges** and **conditional edges** to express branching and looping
+- Defined **state** as a `TypedDict` that flows through every node — the workflow context object
+- Wrote **nodes** as plain Python functions that read state and return partial updates — the workflow service tasks
+- Connected nodes with **edges** and **conditional edges** to express branching and looping — sequence flows and exclusive gateways
 - Added a **retry loop** that re-runs retrieval when the answer quality is low
 - Demonstrated **tool use** with the `@tool` decorator and `ToolNode`
 - Enabled **streaming** to show node-level progress events
-- Configured **LangSmith** for end-to-end observability
+- Configured **LangSmith** for end-to-end observability and audit trail
 - Explained why **stateless design** makes LangGraph safe to scale horizontally on BTP CF
 
-The agent built here uses a stub retriever. In Chapter 7, we replace that stub with the two HANA retrieval chains from Chapters 3 and 4 — and we run them in parallel.
+The agent built here uses a stub retriever. In Chapter 7, we replace that stub with the two HANA retrieval chains — vector cosine search and SPARQL — and run them in parallel.
 
 ---
 
-## 6.14 Checkpoint
+## 6.15 Checkpoint
 
 Before continuing to Chapter 7, verify the following:
 
@@ -543,14 +570,14 @@ python -c "import langgraph; print(langgraph.__version__)"
 # 2. The simple agent runs without errors
 cd agents && python -m agents.simple_qa_agent
 
-# 3. Vertex AI credentials are set
-echo $GOOGLE_APPLICATION_CREDENTIALS   # should print a path to your JSON key
+# 3. Gemini credentials are set
+echo $GOOGLE_API_KEY   # or $GOOGLE_APPLICATION_CREDENTIALS for service account
 
-# 4. LangSmith (optional but recommended)
+# 4. LangSmith (optional but recommended for governance)
 echo $LANGCHAIN_TRACING_V2             # should print "true"
 ```
 
-If all four commands succeed, you have a working LangGraph agent connected to Vertex AI. Chapter 7 takes this foundation and builds the full parallel hybrid RAG system on top of it.
+If all four commands succeed, you have a working LangGraph agent connected to Gemini 2.5 Flash. Chapter 7 takes this foundation and builds the full parallel hybrid RAG system on top of it — replacing the stub retriever with live HANA vector search and SPARQL execution running in parallel.
 
 ---
 

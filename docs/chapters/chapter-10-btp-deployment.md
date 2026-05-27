@@ -1,10 +1,8 @@
 # Chapter 10: Deploying to SAP BTP Cloud Foundry
 
-There is a gap that every developer eventually has to cross, and it is almost always wider than expected. On one side: a working system on your laptop. On the other: that same system running reliably in the cloud, handling real traffic, connected to real data, and accessible to real users. The code on both sides is the same. Everything else is different.
+By the time you reach this chapter, you have a working Hybrid RAG system running locally against your BTP HANA Cloud trial. This chapter deploys it — unchanged code — to BTP Cloud Foundry. The FastAPI Python application becomes a CF app. The CAP Node.js service becomes an MTA module. HANA Cloud, already provisioned in Chapter 2, becomes the bound service.
 
-For the system built in this book, the gap has a specific shape. You have a Python FastAPI service managing a LangGraph agent that talks to SAP HANA Cloud and Google Vertex AI. You have a CAP Node.js service hosting the Fiori UI and the OData V4 API. On your laptop, these two processes communicate over `localhost`. Credentials live in a `.env` file. The port is fixed. None of that survives contact with SAP BTP Cloud Foundry.
-
-This chapter is about crossing that gap. We will work through each step in the order you would actually execute it: getting your credentials out of environment files and into services, pushing the Python agent, building and deploying the CAP application, wiring the two together through the BTP Destination Service, loading the knowledge graph, and verifying that the deployed system actually works. By the end, you will have a production-grade deployment on BTP Cloud Foundry — and you will understand why every configuration decision was made the way it was.
+Every configuration decision in this chapter has a specific rationale. Ports are dynamic because CF assigns them at container startup. Credentials come from service bindings because files cannot be trusted in a containerised environment. The two applications communicate over CF routes rather than localhost because they are separate containers on a distributed platform. Understanding these rationales means you can adapt the deployment pattern to other BTP applications, not just this one.
 
 ---
 
@@ -14,15 +12,27 @@ Before touching a single deployment file, it is worth being precise about what i
 
 **Ports are dynamic.** On your laptop, you choose the port. You run FastAPI on 8000 and CAP on 4004, and nothing conflicts. In Cloud Foundry, the platform assigns a port at container startup and communicates it through the `$PORT` environment variable. Your application must read that variable and bind to it. If it binds to a hardcoded port, it will start and immediately fail health checks. This is why the `manifest.yml` command is `uvicorn main:app --host 0.0.0.0 --port $PORT` rather than a fixed port number.
 
-**Credentials come from service bindings, not files.** A `.env` file is a local development convenience. It is not a deployment artifact. On BTP, sensitive values — database credentials, API keys, service account keys — are delivered to running containers through two mechanisms: environment variables set on the application, and Cloud Foundry service bindings injected as JSON into the `VCAP_SERVICES` environment variable. Neither mechanism involves a file on disk that could be accidentally committed or copied. This is not just a best practice; it is how the platform is designed.
+**Credentials come from service bindings, not files.** A `.env` file is a local development convenience. It is not a deployment artifact. On BTP, sensitive values — database credentials, API keys, GCP service account keys — are delivered to running containers through Cloud Foundry service bindings injected as JSON into the `VCAP_SERVICES` environment variable. The `GOOGLE_API_KEY` that worked locally never appears in a deployed container's filesystem or in `manifest.yml`. This is not just a best practice; it is how the platform is designed. The BTP Destination Service stores the Vertex AI credentials at runtime — the CAP service reads them from the Destination Service, never from environment variables visible in `cf env`.
 
-**Inter-service communication uses the platform's routing layer.** On localhost, CAP reaches the Python agent at `http://localhost:8000`. On BTP Cloud Foundry, every application has a route — a public URL managed by the platform's router. Services communicate over those routes, not over `localhost`. The BTP Destination Service provides a managed, centralized way to store and reference those URLs, so that changing the backend URL only requires updating one entry in the BTP Cockpit rather than redeploying every service that references it.
+**Inter-service communication uses the platform's routing layer.** On localhost, CAP reaches the Python agent at `http://localhost:8000`. On BTP Cloud Foundry, every application has a route — a public HTTPS URL managed by the platform's router. The two applications communicate over those routes. The BTP Destination Service provides a managed, centralised way to store and reference those URLs, so that changing the backend URL only requires updating one entry in the BTP Cockpit rather than redeploying every service that references it.
 
-These three changes — dynamic ports, credential delivery, and routing — account for almost all of the configuration work in this chapter. Everything else is build tooling.
+These three changes — dynamic ports, credential delivery via bindings, and HTTPS routing — account for almost all of the configuration work in this chapter.
 
 ---
 
-## 10.2 Pre-Deployment Checklist
+## 10.2 Why Two Separate Applications
+
+The system deploys as two independent CF applications: the FastAPI Python service and the CAP Node.js service. This is not an accident of how the code happens to be organised — it is a deliberate architectural choice with operational consequences.
+
+FastAPI handles AI orchestration and HANA data access. It is a standard Python web service that runs on any CF Python buildpack. Its responsibilities are: receiving document upload requests, running the LangGraph ingestion pipeline, querying HANA for vector and knowledge graph retrieval, calling Vertex AI for LLM inference, and returning answers. None of these responsibilities have any dependency on OData, Fiori, or BTP security services.
+
+CAP handles OData protocol, Fiori UI rendering, S/4HANA product master integration via API_PRODUCT_SRV, and BTP service bindings for XSUAA authentication and HANA schema management. It is the SAP-native layer. Its responsibilities are: serving the Fiori Elements UI, validating OData requests, managing document and attachment records in HANA, and proxying processing and query requests to the FastAPI backend.
+
+Keeping them separate means you can update the AI model, the LangGraph orchestration logic, or the vector retrieval strategy without touching the CAP service — and vice versa. The HTTP contract between them (multipart POST to `/process-upload`, JSON POST to `/query`, GET to `/status/{materialNumber}`) is stable and narrow. Either side can be redeployed independently as long as that contract is respected.
+
+---
+
+## 10.3 Pre-Deployment Checklist
 
 Deployment failures are much easier to debug when you can be certain your local environment is correctly configured before you start. Work through this checklist before executing any `cf push` or `mbt build` command.
 
@@ -30,17 +40,15 @@ Deployment failures are much easier to debug when you can be certain your local 
 
 **MTA Build Tool.** The CAP service is deployed using the MultiTarget Application (MTA) model, which requires the `mbt` CLI. Run `mbt --version`. If it is missing, install with `npm install -g mbt`. This tool reads `mta.yaml`, builds all modules, and packages them into a single `.mtar` archive that the CF deployer can process.
 
-**BTP Cloud Foundry space.** Confirm you are in the correct space with `cf target`. The space must have the SAP HANA Cloud instance bound to it. If you are using a trial account, the HANA Cloud instance must be active — it stops automatically after 30 days of inactivity and must be restarted manually in the BTP Cockpit.
+**BTP Cloud Foundry space.** Confirm you are in the correct space with `cf target`. The space must have the SAP HANA Cloud instance accessible to it. If you are using a trial account, the HANA Cloud instance must be active — it stops automatically after 30 days of inactivity and must be restarted manually in the BTP Cockpit.
 
-**HANA Cloud instance running.** In the BTP Cockpit, navigate to your subaccount, open the SAP HANA Cloud section, and confirm the instance status is "Running." Deployment will succeed even if HANA is stopped — the CAP service only attempts a database connection at runtime. But the smoke test in section 11.9 will fail until HANA is available.
+**HANA Cloud instance running.** In the BTP Cockpit, navigate to your subaccount, open the SAP HANA Cloud section, and confirm the instance status is "Running." Deployment will succeed even if HANA is stopped — the CAP service only attempts a database connection at runtime. But the smoke test in section 10.8 will fail until HANA is available.
 
-**Google Cloud service account credentials.** The Python agent authenticates to Vertex AI using a Google Cloud service account. You should have a JSON key file from Chapter 2. For BTP deployment, this key needs to be available to the agent container at runtime. The approach in this chapter stores it as an environment variable (base64-encoded) delivered through a User-Provided Service. Have the key file path ready.
-
-**LangChain API key (optional).** If you enabled LangSmith tracing in Chapter 7, you need a LangChain API key. If you are deploying without tracing, set `LANGCHAIN_TRACING_V2` to `"false"` in the manifest. Tracing is strongly recommended for production systems but is not required for the deployment to function.
+**Google Cloud service account credentials.** The Python agent authenticates to Vertex AI using a Google Cloud service account. You should have a JSON key file from Chapter 2. For BTP deployment, this key is stored in the BTP Destination Service — never as a file in the container, never as a plain environment variable visible in `cf env`.
 
 ---
 
-## 10.3 Step 1: Push the Python Agent
+## 10.4 Step 1: Push the Python Agent
 
 The Python agent deploys first because the CAP service needs to know its URL when configuring the Destination Service. Navigate to the `agents/` directory and examine the deployment manifest.
 
@@ -85,7 +93,11 @@ Walk through each field:
 
 `PYTHONPATH: "."` ensures that Python can find modules in the application root. Without this, relative imports within the agent codebase will fail at runtime.
 
-The `((variable))` syntax deserves its own explanation. This notation is *not* a feature of Cloud Foundry manifest files in general. It is a CredHub variable reference used by the CF deployer when working with CredHub-backed secrets, or it can be treated as a placeholder indicating "do not put the real value here." In this project, it signals that these values must be supplied through other means — specifically through `cf set-env` commands or User-Provided Services, which are covered in the next step. If you were to push this manifest as-is, the literal string `((hana-host))` would appear as the `HANA_HOST` environment variable, which is harmless from a security standpoint but would immediately cause a connection failure at runtime.
+The `((variable))` syntax in the env block are placeholders — the real values are supplied through `cf set-env` commands or a User-Provided Service, covered in the next step. If you pushed this manifest as-is, the literal placeholder strings would appear as environment variable values, causing immediate connection failures at runtime.
+
+### HANA connection in CF
+
+In the deployed environment, HANA credentials come from `VCAP_SERVICES` via service binding — the same mechanism CAP uses. The `hdb_srv.py` module already handles this: it reads `VCAP_SERVICES` if direct environment variables are not set. No code change is needed to move from local `.env` file credentials to CF service binding credentials. The credential source changes; the application code does not.
 
 ### Pushing the application
 
@@ -103,15 +115,15 @@ Confirm staging succeeded:
 cf app hybrid-rag-agent
 ```
 
-You should see the application in a `stopped` state with a route assigned. Note the route URL — something like `hybrid-rag-agent.cfapps.eu10.hana.ondemand.com`. You will need this URL when configuring the Destination Service in step 11.6.
+You should see the application in a `stopped` state with a route assigned. Note the route URL — something like `hybrid-rag-agent.cfapps.eu10.hana.ondemand.com`. You will need this URL when configuring the Destination Service.
 
 ---
 
-## 10.4 Step 2: Create the User-Provided Service for Credentials
+## 10.5 Step 2: Create the User-Provided Service for Credentials
 
 Cloud Foundry User-Provided Services (UPS) are the correct mechanism for delivering credentials to applications that need values which are not available through a managed service binding. Instead of setting individual environment variables one by one on each application, you define a named service with a JSON payload of key-value pairs, bind it to any application that needs those values, and Cloud Foundry delivers the entire payload via `VCAP_SERVICES`.
 
-The security rationale is straightforward. If you set credentials with `cf set-env`, they are visible in `cf env <app>` to anyone with developer access to the space — which is sometimes acceptable but can lead to accidental exposure in screenshots, logs, or CI pipelines. If you put credentials in `manifest.yml`, they will eventually end up in version control. A User-Provided Service stores the values in Cloud Foundry's internal credential store, not in any file that exists in your repository.
+The security rationale is straightforward. If you set credentials with `cf set-env`, they are visible in `cf env <app>` to anyone with developer access to the space. If you put credentials in `manifest.yml`, they will eventually end up in version control. A User-Provided Service stores the values in Cloud Foundry's internal credential store, not in any file that exists in your repository.
 
 Create the service with the actual values for your environment:
 
@@ -135,7 +147,7 @@ Now bind the service to the application:
 cf bind-service hybrid-rag-agent hybrid-rag-agent-env
 ```
 
-Cloud Foundry will inject the key-value pairs from this service into the `VCAP_SERVICES` JSON available to the container. However, the FastAPI application reads these values as environment variables directly — not by parsing `VCAP_SERVICES`. This works because Cloud Foundry automatically promotes the parameters from a User-Provided Service into the application's environment when the service is bound. The `HANA_HOST` key in the UPS becomes the `HANA_HOST` environment variable in the application container.
+Cloud Foundry will inject the key-value pairs from this service into the `VCAP_SERVICES` JSON available to the container. The `HANA_HOST` key in the UPS becomes the `HANA_HOST` environment variable in the application container.
 
 If you need to update the credentials later — for example, to rotate the HANA password — you can use:
 
@@ -170,7 +182,7 @@ You should receive a JSON response indicating the service status and confirming 
 
 ---
 
-## 10.5 Step 3: Build and Deploy the CAP Service
+## 10.6 Step 3: Build and Deploy the CAP Service
 
 The CAP service is deployed using the MTA (MultiTarget Application) model rather than a direct `cf push`. MTA is an SAP-developed open standard for describing multi-component applications — a single `mta.yaml` file describes every module (CAP service, Python service), every service binding (HANA, UPS), and every dependency between them. The `mbt build` tool compiles all modules and packages them, and the CF MTA deployer (`cf deploy`) orchestrates the deployment.
 
@@ -236,7 +248,7 @@ Several lines require explanation.
 
 `type: com.sap.xs.hana-schema` declares that the deployer should create (or reuse) a HANA schema resource. This becomes a service binding in Cloud Foundry: the CAP service's `VCAP_SERVICES` will contain the HANA connection details, and the `@cap-js/hana` plugin will read them automatically. You do not configure a connection string in the CAP application; the binding provides it.
 
-`type: org.cloudfoundry.user-provided-service` in the resources section tells the MTA deployer that `hybrid-rag-agent-env` is an existing UPS that should be bound but not created. The UPS you created in step 11.4 is referenced here by name. Both the Python agent and the CAP service are bound to it, which is how both processes receive the HANA credentials.
+`type: org.cloudfoundry.user-provided-service` in the resources section tells the MTA deployer that `hybrid-rag-agent-env` is an existing UPS that should be bound but not created. The UPS you created in step 10.5 is referenced here by name. Both the Python agent and the CAP service are bound to it, which is how both processes receive the HANA credentials.
 
 ### Running the build
 
@@ -276,19 +288,13 @@ You should see `hybrid-rag-agent` and `msds-hybrid-rag-cap` both in a `started` 
 
 ---
 
-## 10.6 Step 4: Configure the BTP Destination
+## 10.7 Step 4: Configure the BTP Destination for Vertex AI
 
-The BTP Destination Service provides a centralized configuration layer for HTTP connections between services in a BTP subaccount. Instead of hardcoding the Python agent URL in the CAP application, the CAP service stores only a destination name and asks the Destination Service to resolve it to an actual URL at request time. This indirection is valuable in production: you can update the backend URL in one place — the BTP Cockpit — without redeploying the CAP service.
+In local development, Vertex AI credentials live in your `.env` file as `GOOGLE_APPLICATION_CREDENTIALS` pointing to a local JSON key file. That pattern does not belong in a deployed environment — a JSON key file in a container filesystem is one restart away from being lost, and it is visible to anyone with container access.
 
-In the architecture of this book, the Destination Service is the mechanism that replaces `localhost:8000`. The CAP service's `AGENT_URL` environment variable is used in local development, but in a full production deployment the cleaner approach — and the one used by mature BTP applications — is to read a destination name from an environment variable and use the SAP Cloud SDK's `executeHttpRequest()` function to resolve and call it.
+In BTP Cloud Foundry, the Vertex AI credentials are stored in the BTP Destination Service. The Destination Service is the enterprise credential management pattern across the entire BTP portfolio — the same mechanism used for S/4HANA connectivity, external REST APIs, and OAuth token exchange. The CAP service reads the Vertex AI credentials from the Destination Service at runtime. They are never stored in the app container, never in environment variables visible in `cf env`, and never in any file that could be accidentally committed or shared.
 
-That production pattern looks like this. In the CAP service handler, instead of:
-
-```javascript
-const response = await axios.post(`${process.env.AGENT_URL}/query`, body);
-```
-
-you use:
+The production pattern in the CAP service handler, instead of reading from environment variables directly, uses the SAP Cloud SDK's destination resolution:
 
 ```javascript
 const { executeHttpRequest } = require('@sap-cloud-sdk/http-client');
@@ -298,27 +304,43 @@ const response = await executeHttpRequest(
 );
 ```
 
-The `executeHttpRequest` function handles destination resolution, certificate verification, and — when configured — token propagation. For the current deployment, we use the simpler approach of passing the agent URL directly as `AGENT_URL`, but understanding the destination pattern is important for production hardening.
+The `executeHttpRequest` function handles destination resolution, certificate verification, and — when configured — token propagation. This is the mature BTP application pattern. For the current deployment, we configure the Destination Service so it is available when you move to production hardening in a later chapter.
 
-### Creating the destination
-
-To support the destination pattern (and as a best practice for knowing where your backend lives), create a destination in the BTP Cockpit even if the CAP service is currently using `AGENT_URL` directly.
+### Creating the agent backend destination
 
 Navigate to your BTP subaccount in the BTP Cockpit. Select **Connectivity** from the left navigation, then **Destinations**. Click **New Destination** and fill in the following values:
 
 - **Name:** `hybrid-rag-agent`
 - **Type:** HTTP
-- **URL:** `https://hybrid-rag-agent.<your-cf-domain>` (the route from step 11.3)
+- **URL:** `https://hybrid-rag-agent.<your-cf-domain>` (the route from step 10.4)
 - **Proxy Type:** Internet
 - **Authentication:** NoAuthentication
 
-The authentication type is NoAuthentication because the Python agent does not have its own authentication mechanism — it relies on the CAP layer above it to handle XSUAA tokens, and its HANA connection uses the credentials delivered through the UPS. If you later add API key authentication to the Python service, update this destination to use `ClientCertificateAuthentication` or `BasicAuthentication` accordingly.
-
 Save the destination. You can test it immediately by clicking **Check Connection** — the cockpit will send a GET request to the root URL of the agent and report the HTTP response code.
+
+### Creating the Vertex AI destination
+
+Click **New Destination** again and configure the Vertex AI credentials:
+
+- **Name:** `VertexAI`
+- **Type:** HTTP
+- **URL:** `https://us-central1-aiplatform.googleapis.com`
+- **Proxy Type:** Internet
+- **Authentication:** NoAuthentication
+
+Add additional properties:
+
+| Property | Value |
+|----------|-------|
+| `gcp.project_id` | Your GCP project ID |
+| `gcp.location` | `us-central1` |
+| `gcp.service_account_key` | The entire contents of your `gcp-sa-key.json` file |
+
+BTP encrypts the `gcp.service_account_key` value at rest. The service account JSON key is now stored in one place — the BTP Destination Service — and accessible to any BTP application in this subaccount that needs Vertex AI access. Rotating the credentials means updating this one destination entry, not redeploying any application.
 
 ---
 
-## 10.7 Step 5: Load the Ontology
+## 10.8 Step 5: Load the Ontology
 
 The HANA knowledge graph requires the MSDS ontology to be loaded before any queries can run against it. In local development this was done by calling the admin endpoint directly. In the deployed environment, the process is identical, but the URL is the deployed agent route rather than localhost.
 
@@ -348,7 +370,7 @@ Look for a `hdbcli` connection error. If you see "authentication failed," confir
 
 ---
 
-## 10.8 Step 6: Smoke Test the Deployed System
+## 10.9 Step 6: Smoke Test the Deployed System
 
 With both services running and the ontology loaded, run through each integration point systematically before calling the deployment complete.
 
@@ -366,18 +388,18 @@ Expected response: a JSON object confirming service status, HANA connectivity, a
 curl -X POST \
   https://hybrid-rag-agent.<your-cf-domain>/query \
   -H "Content-Type: application/json" \
-  -d '{"question": "What is the flash point of acetone?", "session_id": "smoke-test-01"}'
+  -d '{"question": "What documents are available for material MAT-001?", "session_id": "smoke-test-01"}'
 ```
 
-This bypasses the CAP layer entirely and tests the LangGraph agent directly. You should receive a JSON response with an `answer` field and a `retrieval_path` field indicating which chains were invoked. If this succeeds, the HANA connection, the Vertex AI embedding model, and the LangGraph orchestration are all functional.
+This bypasses the CAP layer entirely and tests the LangGraph agent directly against HANA. The question validates the end-to-end flow: the agent queries both the knowledge graph and the vector store, calls Vertex AI for answer synthesis, and returns the result. You should receive a JSON response with an `answer` field and a `retrieval_path` field indicating which chains were invoked. If this succeeds, the HANA connection, the Vertex AI embedding model, and the LangGraph orchestration are all functional in the deployed environment.
 
 ### CAP OData endpoint
 
 ```bash
-curl https://msds-hybrid-rag-cap.<your-cf-domain>/odata/v4/MSDSService/Materials
+curl https://msds-hybrid-rag-cap.<your-cf-domain>/odata/v4/documents/Documents
 ```
 
-This calls the CAP OData service's Materials entity set. On a fresh deployment, the response will be an empty array `{"value": []}` — no materials have been uploaded yet. An empty array is a successful response; a 500 error indicates a CAP startup or HANA binding problem.
+This calls the CAP OData service's Documents entity set. On a fresh deployment, the response will be an empty array `{"value": []}` — no documents have been uploaded yet. An empty array is a successful response; a 500 error indicates a CAP startup or HANA binding problem.
 
 ### Fiori Elements UI
 
@@ -391,7 +413,7 @@ The Fiori Elements list report should render. If you see a blank page, open the 
 
 ---
 
-## 10.9 Troubleshooting
+## 10.10 Troubleshooting
 
 Deployment failures follow predictable patterns. The following are the most common failure modes and their resolution paths.
 
@@ -417,7 +439,7 @@ Deployment failures follow predictable patterns. The following are the most comm
 
 **Cause:** The GCP service account credentials are not correctly configured, or the service account does not have the required Vertex AI roles.
 
-**Resolution:** Confirm that `GCP_PROJECT_ID` in the UPS matches the project where Vertex AI is enabled. The Python agent uses Application Default Credentials — in a Cloud Foundry container, this requires either a service account key in the `GOOGLE_APPLICATION_CREDENTIALS` environment variable or the Workload Identity Federation configuration from Chapter 2. If you are using a key file, base64-encode the JSON content and set it as an environment variable, then decode it to a temp file at startup in the application's entry point.
+**Resolution:** Confirm that `GCP_PROJECT_ID` in the UPS matches the project where Vertex AI is enabled. Confirm the Vertex AI Destination in BTP has the correct `gcp.service_account_key` value. Confirm the service account has the Vertex AI User role in GCP IAM. If you are using a key file directly, base64-encode the JSON content and set it as an environment variable, then decode it to a temp file at startup in the application's entry point.
 
 ### CAP cannot reach agent
 
@@ -425,7 +447,7 @@ Deployment failures follow predictable patterns. The following are the most comm
 
 **Cause:** The `AGENT_URL` environment variable in the CAP service contains an incorrect value, or the Python agent is not running.
 
-**Resolution:** Check `cf env msds-hybrid-rag-cap` and confirm the `AGENT_URL` value is the correct HTTPS route for the Python agent. Confirm the Python agent is running with `cf app hybrid-rag-agent`. If you recently redeployed the Python agent and its route changed, update the destination in the BTP Cockpit and, if using `AGENT_URL` directly, use `cf set-env` to update the value and restart the CAP service.
+**Resolution:** Check `cf env msds-hybrid-rag-cap` and confirm the `AGENT_URL` value is the correct HTTPS route for the Python agent. Confirm the Python agent is running with `cf app hybrid-rag-agent`. If you recently redeployed the Python agent and its route changed, update the destination in the BTP Cockpit and use `cf set-env` to update the `AGENT_URL` value on the CAP service, then restart it.
 
 ### Package not found during staging
 
@@ -437,7 +459,7 @@ Deployment failures follow predictable patterns. The following are the most comm
 
 ---
 
-## 10.10 Scaling
+## 10.11 Scaling
 
 The system as deployed runs as single instances of each service. For a pilot with a handful of users, this is sufficient. For broader use, both the Python agent and the CAP service can be scaled horizontally — adding more container instances that share the incoming request load behind the Cloud Foundry router.
 
@@ -463,33 +485,30 @@ For production deployments with SLA requirements, consider enabling autoscaling 
 
 ---
 
-## 10.11 What You Have Built
+## 10.12 What You Have Built
 
-Step back and look at what is now running in SAP BTP Cloud Foundry.
+You have deployed a production-grade Material Document Intelligence Platform to SAP BTP Cloud Foundry. Any PDF document — MSDS, invoice, batch certificate, inspection report, maintenance manual, legal filing — can be uploaded against a SAP Material Number, processed into a vector store and knowledge graph, and queried in natural language. The system runs on SAP's enterprise cloud platform, uses SAP HANA Cloud for both AI storage layers, integrates with real S/4HANA product master data via API_PRODUCT_SRV, and presents a familiar Fiori Elements interface.
 
-Two applications are deployed as Cloud Foundry containers. The Python FastAPI service — `hybrid-rag-agent` — is running a LangGraph agent that dispatches every incoming question to parallel retrieval chains: a SPARQL chain that queries the HANA RDF knowledge graph for structured facts, and a vector similarity chain that searches HANA's `L2_DISTANCE` index for semantically relevant passages. The agent synthesizes the results using a Gemini model on Google Vertex AI and returns a grounded answer with a traceable retrieval path.
+Two applications are running as Cloud Foundry containers. The Python FastAPI service — `hybrid-rag-agent` — runs a LangGraph agent that dispatches every incoming question to parallel retrieval chains: a SPARQL chain that queries the HANA RDF knowledge graph for structured facts, and a vector similarity chain that searches HANA's vector index for semantically relevant passages. The agent synthesises the results using a Gemini model on Google Vertex AI and returns a grounded answer with a traceable retrieval path.
 
-The CAP Node.js service — `msds-hybrid-rag-cap` — is hosting an OData V4 API for the Materials and Queries entities, a Fiori Elements list report and object page for browsing documents and running queries, and an attachment handling layer that stores uploaded PDFs in HANA and triggers the Python agent's ingestion pipeline when new documents arrive.
+The CAP Node.js service — `msds-hybrid-rag-cap` — hosts an OData V4 API, a Fiori Elements UI, and an attachment handling layer. It validates material numbers against S/4HANA product master data, manages document records in HANA, and proxies processing and query requests to the FastAPI backend. Credentials for Vertex AI are stored in the BTP Destination Service — never in application code, never in deployment files.
 
-The two services communicate over HTTPS through Cloud Foundry's routing layer. Credentials — HANA connection details, GCP project identifiers, LangChain API keys — live in a User-Provided Service that binds to both containers at runtime, never appearing in source code or deployment files.
-
-The knowledge graph is loaded with the MSDS ontology, ready to answer structured queries about chemical properties, hazard classifications, and regulatory relationships. The vector index is ready to receive documents — each PDF uploaded through the Fiori UI will be chunked, embedded, and stored in HANA, making its contents available for semantic search immediately.
-
-This is not a prototype running on a developer laptop. It is a deployed, scalable, cloud-native system on the same platform that hosts SAP S/4HANA, SuccessFactors, and every other SAP cloud product your organization uses.
+This is the foundation for an enterprise AI capability that can scale across your SAP landscape. The same platform, the same patterns, the same HANA instance that stores your vector embeddings and knowledge graph triples — extended to handle every document type your organisation processes against SAP materials.
 
 ---
 
-## 10.12 Chapter Checkpoint
+## 10.13 Chapter Checkpoint
 
-Work through this list before moving to the next chapter. Each item verifies a specific part of the deployed system and points toward the section to revisit if the check fails.
+Work through this list before moving to the next chapter. Each item verifies a specific part of the deployed system.
 
-- `cf app hybrid-rag-agent` shows the application in `started` state with a route assigned. (Section 11.3)
-- `curl https://hybrid-rag-agent.<domain>/health` returns a JSON response with no error fields. (Section 11.8)
-- The User-Provided Service `hybrid-rag-agent-env` exists and is bound to both applications. (Section 11.4)
-- `cf deploy` completed without errors and both applications appear in `cf apps`. (Section 11.5)
-- A BTP Destination named `hybrid-rag-agent` exists in the subaccount, pointing to the Python agent URL. (Section 11.6)
-- `curl -X POST .../admin/load-ontology` returned a 200 status code. (Section 11.7)
-- A direct `curl` POST to `/query` returns an answer with a retrieval path. (Section 11.8)
-- The Fiori Elements UI loads at the CAP application URL without errors in the browser console. (Section 11.8)
+- `cf app hybrid-rag-agent` shows the application in `started` state with a route assigned. (Section 10.4)
+- `curl https://hybrid-rag-agent.<domain>/health` returns a JSON response with no error fields. (Section 10.9)
+- The User-Provided Service `hybrid-rag-agent-env` exists and is bound to both applications. (Section 10.5)
+- `cf deploy` completed without errors and both applications appear in `cf apps`. (Section 10.6)
+- A BTP Destination named `hybrid-rag-agent` exists in the subaccount, pointing to the Python agent URL. (Section 10.7)
+- A BTP Destination named `VertexAI` exists with the GCP service account key stored as a destination property. (Section 10.7)
+- `curl -X POST .../admin/load-ontology` returned a 200 status code. (Section 10.8)
+- A direct `curl` POST to `/query` with question "What documents are available for material MAT-001?" returns an answer with a retrieval path. (Section 10.9)
+- The Fiori Elements UI loads at the CAP application URL without errors in the browser console. (Section 10.9)
 
 If every item on this list is green, the system is deployed and functional. The next chapter addresses operational concerns — observability, performance tuning, and the integration patterns that allow this system to participate in broader SAP workflows.
