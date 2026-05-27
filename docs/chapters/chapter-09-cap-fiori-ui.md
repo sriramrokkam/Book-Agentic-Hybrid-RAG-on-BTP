@@ -244,7 +244,7 @@ srv.on("processFile", Documents, async (req) => {
 });
 ```
 
-The `req.params[0]` contains the entity key of the bound action target — in this case `{ materialNumber: 'ACETONE-001' }`. This is the OData V4 pattern for bound actions: the key is part of the action URL path, not the request body.
+The `req.params[0]` contains the entity key of the bound action target — in this case `{ materialNumber: 'BATCH-QC-MAT-001' }`. This is the OData V4 pattern for bound actions: the key is part of the action URL path, not the request body.
 
 The handler updates the record status to `Processing` immediately after submitting to the backend. This is an optimistic update — it reflects what should happen, not what has completed. The actual status progression (Processing to Completed or Error) happens asynchronously as the Python agent runs. The `pollStatus` function and handler described below are how the UI tracks that progression.
 
@@ -488,7 +488,7 @@ With both services running, walk through the complete flow from document upload 
 **Step 4: Watch the dual status.** Open a separate terminal and call `pollStatus` manually to watch the counts grow:
 
 ```bash
-curl "http://localhost:4004/odata/v4/documents/pollStatus(materialNumber='ACETONE-001')"
+curl "http://localhost:4004/odata/v4/documents/pollStatus(materialNumber='BATCH-QC-MAT-001')"
 ```
 
 You will see `kg_done` and `vec_done` flip to `true` as each pipeline completes, and the `triples` and `vectors` counts increment. The Fiori object page, if you have it open and refresh it, shows the same values updating.

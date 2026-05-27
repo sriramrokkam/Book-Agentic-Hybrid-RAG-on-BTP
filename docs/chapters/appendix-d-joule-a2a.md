@@ -10,9 +10,9 @@
 
 ---
 
-Throughout this book we have built the intelligence layer: a Python FastAPI service that orchestrates a LangGraph hybrid RAG agent, stores knowledge in SAP HANA Cloud, and returns accurate answers about Material Safety Data Sheets. In Chapter 9 we gave that agent a Fiori Elements front-end. This appendix adds a third access channel: SAP Joule, the AI assistant embedded directly in S/4HANA and SuccessFactors.
+Throughout this book we have built the intelligence layer: a Python FastAPI service that orchestrates a LangGraph hybrid RAG agent, stores knowledge in SAP HANA Cloud, and returns accurate answers about material quality documents. In Chapter 9 we gave that agent a Fiori Elements front-end. This appendix adds a third access channel: SAP Joule, the AI assistant embedded directly in S/4HANA and SuccessFactors.
 
-The value is significant. A procurement specialist in S/4HANA who is looking at a purchase order for Acetone can ask Joule "what are the PPE requirements for this material?" without leaving their context. Joule routes that question to our hybrid RAG agent, which queries the Knowledge Graph and vector store, and returns the answer inside the Joule chat panel. The user never opens a separate application.
+The value is significant. A procurement specialist in S/4HANA who is looking at a purchase order for a steel batch can ask Joule "what test methods are documented for this material?" without leaving their context. Joule routes that question to our hybrid RAG agent, which queries the Knowledge Graph and vector store, and returns the answer inside the Joule chat panel. The user never opens a separate application.
 
 That routing is handled by the A2A protocol. This appendix explains how it works, walks through every YAML file in the `joule/` directory of the project, and shows you how to package and deploy the capability.
 
@@ -113,13 +113,13 @@ The `schema_version: 1.0.0` refers to the outer agent declaration format. The ca
 ```yaml
 schema_version: 3.28.0
 metadata:
-  display_name: MSDS Safety Knowledge Agent
+  display_name: Material Document Knowledge Agent
   namespace: com.sap.msds
   name: msds_kg_agent
   version: 2.0.0-SNAPSHOT
   description: >-
-    Answer questions about Material Safety Data Sheets (MSDS): hazards,
-    PPE requirements, first aid, storage conditions, and regulatory compliance.
+    Answer questions about material quality documents: test results, certificate identifiers,
+    storage conditions, acceptance criteria, and delivery requirements.
     Uses hybrid RAG (Knowledge Graph + Vector search) for accurate answers.
 system_aliases:
   MSDS_KG_Agent:
@@ -240,11 +240,10 @@ Scenario files are what Joule uses to decide which function to call. They contai
 
 ```yaml
 description: >-
-  Answer questions about Material Safety Data Sheets (MSDS) for chemicals and materials.
-  This covers hazard information, GHS classification, PPE requirements, protective equipment,
-  first aid procedures, storage conditions, incompatible materials, regulatory compliance,
-  REACH, flammability, toxicity, exposure limits, and safety handling instructions.
-  Examples: hazards of Acetone, PPE for Methanol, how to store WD-40, material 200001001 safety data.
+  Answer questions about material quality documents for SAP materials.
+  This covers test methods, test results, certificate numbers, certifying laboratories,
+  acceptance criteria, storage conditions, delivery requirements, and batch identifiers.
+  Examples: test results for batch BATCH-QC-MAT-001, storage conditions for material 200001001, certificate details for supplier ACME Steel AG.
 target:
   type: function
   name: msds_chat
@@ -265,7 +264,7 @@ capability_context:
 
 ```yaml
 description: >-
-  Check the processing status of an MSDS material document including ingestion progress,
+  Check the processing status of a material document including ingestion progress,
   number of Knowledge Graph triples extracted, number of vectors stored,
   and whether document processing is complete or still in progress.
 target:
@@ -282,7 +281,7 @@ capability_context:
     value: $target_result.material_number
 ```
 
-The `description` field is the most important part of a scenario file. Write it as a dense enumeration of the topics the scenario covers, not as a sentence. Joule's NLU engine scores the user's input against this description using semantic similarity; the richer and more specific the description, the more accurately Joule routes questions to the right scenario. The examples at the end ("hazards of Acetone, PPE for Methanol") act as few-shot hints.
+The `description` field is the most important part of a scenario file. Write it as a dense enumeration of the topics the scenario covers, not as a sentence. Joule's NLU engine scores the user's input against this description using semantic similarity; the richer and more specific the description, the more accurately Joule routes questions to the right scenario. The examples at the end ("test results for batch BATCH-QC-MAT-001, storage conditions for material 200001001") act as few-shot hints.
 
 The `target` section names the function to call and passes parameters from the capability context. Because `material_number` is stored in `$capability_context.material_number` from a previous turn, Joule can carry it forward without the user repeating it.
 
@@ -320,9 +319,9 @@ The A2A protocol in Joule 1.x uses a flat JSON format:
 
 ```json
 {
-  "Message": "What are the hazards of Acetone?",
+  "Message": "What test methods are documented for this batch?",
   "contextId": "default",
-  "taskId": "200001001"
+  "taskId": "BATCH-QC-MAT-001"
 }
 ```
 
@@ -334,10 +333,10 @@ The emerging standard A2A protocol (as defined by the open A2A specification tha
   "method": "message/send",
   "params": {
     "message": {
-      "parts": [{"text": "What are the hazards of Acetone?"}]
+      "parts": [{"text": "What test methods are documented for this batch?"}]
     },
     "contextId": "default",
-    "taskId": "200001001"
+    "taskId": "BATCH-QC-MAT-001"
   }
 }
 ```
@@ -349,9 +348,9 @@ The response uses the flat format in both cases, since Joule 1.x is the primary 
 ```json
 {
   "type": "finalAnswer",
-  "message": "Acetone (UN1090) is a highly flammable liquid...",
+  "message": "Batch BATCH-QC-MAT-001 was tested using ISO 6892-1 (tensile)...",
   "contextId": "default",
-  "taskId": "200001001"
+  "taskId": "BATCH-QC-MAT-001"
 }
 ```
 
@@ -496,36 +495,35 @@ Open the Joule chat panel in your S/4HANA Cloud or SuccessFactors session. The f
 **Cold start — establishing material context:**
 
 ```
-User:    What are the hazards of Acetone?
+User:    What are the test results for batch BATCH-QC-MAT-001?
 
-Joule:   [Searching MSDS knowledge base...]
+Joule:   [Searching material document knowledge base...]
 
-         Acetone (UN1090, CAS 67-64-1) is classified as a highly flammable
-         liquid and vapour (GHS02) and causes serious eye irritation (GHS07).
-         The flash point is -20 degrees Celsius. The substance is not
-         classified as carcinogenic or reproductively toxic under REACH.
+         Batch BATCH-QC-MAT-001 from supplier ACME Steel AG was tested by
+         Bureau Veritas Testing GmbH under certificate QC-CERT-44781.
+         Tensile test (ISO 6892-1): yield strength 450 MPa, elongation 22%.
+         All results within specification. Certificate date: 2024-03-12.
 
-         Source: hybrid RAG — Knowledge Graph (GHS classification, UN number)
-         + vector search (handling instructions).
+         Source: hybrid RAG — Knowledge Graph (certificate number, test results)
+         + vector search (delivery and storage conditions).
 ```
 
-Joule matched the question to the `msds_query` scenario because the description includes "hazard information" and "GHS classification." The `material_number` capability context was empty on this first turn, so the agent resolved the material by name from the Knowledge Graph.
+Joule matched the question to the `msds_query` scenario because the description includes "test results" and "batch identifiers." The `material_number` capability context was empty on this first turn, so the agent resolved the batch by identifier from the Knowledge Graph.
 
 **Follow-up — context preserved:**
 
 ```
-User:    What PPE do I need?
+User:    What are the storage requirements?
 
-Joule:   [Searching MSDS knowledge base...]
+Joule:   [Searching material document knowledge base...]
 
-         For Acetone, the required PPE is: safety glasses or goggles to
-         protect against eye irritation, nitrile gloves (minimum 0.4 mm
-         thickness), and adequate ventilation. A respirator is required
-         if ventilation is insufficient to maintain exposure below the
-         TWA of 500 ppm.
+         For batch BATCH-QC-MAT-001, the batch certificate specifies:
+         store in dry conditions below 25°C, away from moisture and direct
+         sunlight. Maximum stacking height 1.5 m. Inspect packaging
+         integrity before GR posting.
 ```
 
-The user did not mention Acetone in the second question. Joule passed the `material_number` from `$capability_context.material_number` to the function, which sent it as `taskId` in the `/a2a` request. The agent used it to scope the Knowledge Graph SPARQL query to Acetone's document.
+The user did not mention the batch number in the second question. Joule passed the `material_number` from `$capability_context.material_number` to the function, which sent it as `taskId` in the `/a2a` request. The agent used it to scope the Knowledge Graph SPARQL query to that batch's document.
 
 **Checking processing status:**
 

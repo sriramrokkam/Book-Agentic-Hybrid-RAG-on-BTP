@@ -9,13 +9,14 @@
 
 Every chapter builds on a single real-world use case:
 
-> **MSDS/SDS (Material Safety Data Sheets) for SAP customers**
+> **Material Quality Documents for SAP customers**
 >
-> Manufacturing, chemical, pharma, and logistics companies on SAP manage thousands
-> of safety documents. These contain precise structured facts (GHS codes, hazard
-> classifications, exposure limits) AND dense narrative text (handling procedures,
-> first aid, disposal instructions). No single retrieval strategy handles both well.
-> This book builds a system that does.
+> Manufacturing, supply chain, and logistics companies on SAP manage thousands
+> of quality documents — batch quality certificates, GR inspection reports,
+> equipment maintenance records, supplier invoices. These contain precise structured facts
+> (test results, certificate numbers, certifying laboratories) AND dense narrative text
+> (storage conditions, delivery requirements, inspection procedures).
+> No single retrieval strategy handles both well. This book builds a system that does.
 
 ---
 
@@ -44,7 +45,7 @@ Every chapter builds on a single real-world use case:
 - The shift: from LLMs that answer to agents that reason and act
 - The agent spectrum: traditional code → workflow → RAG → autonomous agent
 - Types of agents — and why domain-specific agents are the right choice for enterprise
-- Why general-purpose AI is not enough: the GHS code problem as a concrete example
+- Why general-purpose AI is not enough: the exact identifier problem as a concrete example
 - Hybrid RAG as the architecture for domain-specific agents
 - What this book builds: the MSDS Hybrid RAG Agent on SAP BTP
 - Why now: SAP's 200+ specialist agents and the Autonomous Enterprise
@@ -95,10 +96,10 @@ Every chapter builds on a single real-world use case:
 - Calling text-embedding-004 (Vertex AI) from Python
 - Storing embeddings: INSERT with REAL_VECTOR
 - Cosine similarity search: the HANA SQL query explained
-- Chunking strategy for MSDS documents — why chunk size matters
+- Chunking strategy for material documents — why chunk size matters
 - Building `vector_srv.py` — the vector service layer
-- Testing: upload one MSDS, search with a natural language question
-- What vector search gets right — and what it gets wrong (the GHS code problem)
+- Testing: upload one batch certificate, search with a natural language question
+- What vector search gets right — and what it gets wrong (the exact identifier problem)
 
 **What reader can do after this chapter:** Build a working vector search system on HANA Cloud, understand its strengths and limitations.
 
@@ -110,15 +111,15 @@ Every chapter builds on a single real-world use case:
 - What is a Knowledge Graph? Triples, nodes, edges — intuition first
 - RDF and SPARQL — the standards explained plainly
 - Why HANA Cloud supports SPARQL (SPARQL_EXECUTE stored procedure)
-- Designing the MSDS ontology — what facts matter?
-  - Nodes: Material, HazardCode, ExposureLimit, Precaution, Supplier
-  - Relationships: hasHazardCode, hasExposureLimit, requiresPrecaution
+- Designing the ontology — what facts matter for material documents?
+  - Nodes: Material, CertifyingOrg, TestResult, CertifyingLab
+  - Relationships: certifiedBy, testResult, certificateNumber, certifyingLab
 - The OWL ontology file: `MSDS_Ontology.ttl` explained line by line
 - Extracting triples from text using Gemini (ontology-constrained prompting)
 - Storing triples in HANA: named graphs per document
 - Writing SPARQL queries — from natural language to graph traversal
 - Building `kg_srv.py` — the Knowledge Graph service layer
-- Testing: upload one MSDS, query for GHS codes via SPARQL
+- Testing: upload one batch certificate, query for certificate number and test results via SPARQL
 - What the KG gets right that vector search cannot
 
 **What reader can do after this chapter:** Build a working Knowledge Graph on HANA Cloud, extract structured facts from documents, query via SPARQL.
@@ -139,7 +140,7 @@ Every chapter builds on a single real-world use case:
 - Status tracking: dual-status in CAP schema (vectorStatus + kgStatus)
 - Building `doc_srv.py` — the ingestion service
 - Error handling: what happens when one pipeline fails
-- Testing: upload 5 MSDS documents, verify both stores populated
+- Testing: upload 5 material documents, verify both stores populated
 
 **What reader can do after this chapter:** Build a production-ready document ingestion pipeline that feeds both retrieval strategies.
 
@@ -181,7 +182,7 @@ Every chapter builds on a single real-world use case:
 - Building `orchestrator.py` — the parallel dispatch logic
 - Conversation history — stateless memory passed in every request
 - The `/query` endpoint — full request/response contract
-- Testing: the GHS code question (KG wins) vs the precautions question (vector wins) vs a combined question (both contribute)
+- Testing: the test result question (KG wins) vs the storage conditions question (vector wins) vs a combined question (both contribute)
 
 **What reader can do after this chapter:** Build a working hybrid RAG system that provably outperforms either retrieval strategy alone.
 
@@ -192,15 +193,15 @@ Every chapter builds on a single real-world use case:
 
 - When one agent is not enough — the complexity ceiling
 - The supervisor pattern: one coordinator, multiple specialists
-- Designing specialist agents for MSDS:
-  - HazardAgent: GHS codes, classifications, hazard statements
-  - ComplianceAgent: exposure limits, regulatory thresholds
-  - SafetyAgent: precautions, first aid, PPE requirements
+- Designing specialist agents for material documents:
+  - HazardAgent: test methods, test results, certificate identifiers
+  - ComplianceAgent: acceptance criteria, specification tolerances
+  - SafetyAgent: storage conditions, handling instructions, delivery requirements
   - SummaryAgent: synthesize across agents
 - Building the supervisor with LangGraph
 - Agent handoff — passing context between agents cleanly
 - Parallel vs sequential specialist execution — when each is right
-- The full multi-agent flow for a complex MSDS question
+- The full multi-agent flow for a complex material document question
 - Testing: a question that requires all three specialist agents
 
 **What reader can do after this chapter:** Build a multi-agent supervisor system, understand when to use specialist agents vs a single agent.
@@ -274,7 +275,7 @@ Complete walkthrough with screenshots:
 - Complete file listing for `agents/` module
 - Complete file listing for `cap-srv/` module
 - `MSDS_Ontology.ttl` — full OWL ontology with comments
-- Sample MSDS documents used in the book (public domain)
+- Sample material documents used in the book (batch quality certificates)
 - `.env.example` — all required environment variables
 
 ---

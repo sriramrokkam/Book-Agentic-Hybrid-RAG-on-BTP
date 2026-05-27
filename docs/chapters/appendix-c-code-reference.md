@@ -455,7 +455,7 @@ curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{
     "question": "What test method was used for the tensile strength test?",
-    "material_number": "ACETONE-001",
+    "material_number": "BATCH-QC-MAT-001",
     "history": []
   }'
 ```
@@ -466,7 +466,7 @@ curl -X POST http://localhost:8000/query-advanced \
   -H "Content-Type: application/json" \
   -d '{
     "question": "What test results are recorded and what are the storage requirements?",
-    "material_number": "ACETONE-001",
+    "material_number": "BATCH-QC-MAT-001",
     "use_supervisor": true,
     "history": []
   }'
@@ -475,19 +475,19 @@ curl -X POST http://localhost:8000/query-advanced \
 **Upload PDF for ingestion**
 ```bash
 curl -X POST http://localhost:8000/process-upload \
-  -F "file=@/path/to/ACETONE-001.pdf" \
-  -F "materialNumber=ACETONE-001" \
+  -F "file=@/path/to/BATCH-QC-MAT-001.pdf" \
+  -F "materialNumber=BATCH-QC-MAT-001" \
   -F "materialName=BATCH-QC-MAT-001"
 ```
 
 **Poll ingestion status**
 ```bash
-curl http://localhost:8000/status/ACETONE-001
+curl http://localhost:8000/status/BATCH-QC-MAT-001
 ```
 
 **Delete document (cascade)**
 ```bash
-curl -X DELETE http://localhost:8000/delete/ACETONE-001
+curl -X DELETE http://localhost:8000/delete/BATCH-QC-MAT-001
 ```
 
 **Load ontology (run once after provisioning)**
