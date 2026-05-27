@@ -24,35 +24,8 @@ Before clicking through consoles, it helps to understand the shape of what we ar
 
 Our system has three infrastructure components:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Your Local Machine                                          │
-│  Python 3.11+  │  Node.js 20+  │  CF CLI  │  VS Code        │
-└────────────────────────┬────────────────────────────────────┘
-                         │ develops & deploys to
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  SAP BTP Trial Account (eu10 or us10 region)                │
-│                                                              │
-│  ┌─────────────────────┐   ┌────────────────────────────┐  │
-│  │  Cloud Foundry Space │   │  HANA Cloud Instance        │  │
-│  │  (free runtime)      │   │  ├─ REAL_VECTOR table       │  │
-│  │  FastAPI agent       │   │  └─ SPARQL/RDF graphs       │  │
-│  │  CAP Node.js service │   └────────────────────────────┘  │
-│  └─────────────────────┘                                     │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Destination Service                                 │    │
-│  │  "VertexAI" destination → GCP service account creds │    │
-│  └─────────────────────────────────────────────────────┘    │
-└────────────────────────┬────────────────────────────────────┘
-                         │ calls (HTTPS only)
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Google Cloud Platform                                       │
-│  ├─ Vertex AI API: text-embedding-004                       │
-│  └─ Vertex AI API: Gemini 2.5 Flash                         │
-└─────────────────────────────────────────────────────────────┘
-```
+![Platform Setup Overview](docs/screenshots/diagrams/02-platform-setup-overview.png)
+*Figure 2.2 — Your local machine develops and deploys to SAP BTP Trial. The BTP Cloud Foundry space runs the FastAPI agent and CAP Node.js service. HANA Cloud holds the REAL_VECTOR table and SPARQL/RDF graphs. The Destination Service stores GCP credentials. All Vertex AI calls go outbound over HTTPS only.*
 
 SAP HANA Cloud is the **knowledge layer** — it stores both our vector embeddings and our RDF knowledge graph in a single managed service. No other database on the market provides both REAL_VECTOR column types (for cosine similarity search) and a native SPARQL execution engine in one service. This is a significant architectural advantage — one connection, one credential, two retrieval strategies.
 
