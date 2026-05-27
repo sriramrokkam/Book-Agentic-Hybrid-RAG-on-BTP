@@ -1,8 +1,8 @@
 # Chapter 3: Vector Search on SAP HANA Cloud
 
-When a safety officer asks "What precautions are needed when handling this chemical?", they are asking a semantic question. The answer might be phrased differently in different sections of the PDF — Section 7 calls it "handling requirements", Section 8 describes it under "exposure controls", and Section 15 restates it as a regulatory obligation. Vector search finds it by meaning, not by exact keyword match — this is what makes it superior to SAP's built-in DMS full-text search for narrative document content.
+When a quality engineer asks "Did the supplier describe the tensile strength test method for this batch?", they are asking a semantic question. The answer might be phrased differently in different sections of the certificate — the header calls it "test procedure", the body describes it as "tensile analysis methodology", and the appendix restates it as "verification approach". Vector search finds it by meaning, not by exact keyword match — this is what makes it superior to SAP's built-in DMS full-text search for narrative document content.
 
-The same applies to every document type the Material Document Intelligence Platform handles. An invoice might describe payment terms in a header note or in a line-item annotation. A batch certificate might record a test result in a summary table or in a methodology paragraph. Vector search surfaces the right passage regardless of where in the document it appears.
+The same applies to every document type the Material Document Intelligence Platform handles. A batch certificate might record a test result in a summary table or in a methodology paragraph. An inspection report might document the same defect in the findings section or the inspector's narrative remarks. Vector search surfaces the right passage regardless of where in the document it appears.
 
 By the end of this chapter you will have a working vector search system on HANA Cloud. You will take a chunk of text from a material document, turn it into a 768-dimensional vector using Google's `text-embedding-004` model, store it in a `REAL_VECTOR` column, and retrieve the most semantically similar chunks for a natural language question — all in roughly 200 lines of Python.
 
@@ -18,7 +18,7 @@ An embedding is a fixed-length list of numbers — in our case, 768 floating-poi
 
 A useful analogy: imagine you are sorting books in a library. A traditional database would file them by title (alphabetical order) or by author. That is exact-match retrieval — fast, but useless if you don't know the title. A librarian, by contrast, knows that *Crime and Punishment* and *The Brothers Karamazov* belong on the same shelf because they are both Dostoevsky novels about guilt and redemption. The librarian has put each book at a *position* that reflects its content. Books on similar topics end up close together.
 
-Embeddings do the same thing for text, but in 768 dimensions instead of two. The "position" of a sentence is just its embedding vector. Sentences about flammability cluster together. Sentences about first aid cluster together. Sentences about regulatory codes cluster together — and importantly, they cluster *separately* from the flammability sentences, even when they mention the same chemical.
+Embeddings do the same thing for text, but in 768 dimensions instead of two. The "position" of a sentence is just its embedding vector. Sentences about quality test results cluster together. Sentences about inspection findings cluster together. Sentences about regulatory codes cluster together — and importantly, they cluster *separately* from the test result sentences, even when they mention the same material.
 
 > **Note:** The number 768 is not magic. It is simply the output dimension chosen by the team that trained `text-embedding-004`. Other models produce 384, 1024, 1536, or 3072 dimensions. Higher is not always better — it just means more storage and slower comparisons. For our use case, 768 is a comfortable balance.
 
@@ -443,13 +443,13 @@ from srv.vertex_srv import embed_text
 
 load_dotenv()
 
-TEST_MATERIAL = "ACETONE-TEST-001"
+TEST_MATERIAL = "BATCH-QC-MAT-001"
 TEST_CHUNKS = [
-    "Acetone is a highly flammable liquid and vapor. Flash point: -18°C. Keep away from heat and open flames.",
-    "First aid for skin contact: Wash with soap and water for at least 15 minutes. Remove contaminated clothing.",
-    "GHS Classification: Flammable Liquid Category 2. Eye Irritant Category 2A.",
-    "Personal Protective Equipment: Wear chemical resistant gloves and safety glasses when handling.",
-    "Storage: Store in a cool, dry, well-ventilated area away from ignition sources and incompatible materials."
+    "Batch lot number: BATCH-2024-0871. Material: Steel rod grade S355. Supplier: ACME Steel AG. Certificate number: QC-CERT-44781. Certification date: 2024-03-15.",
+    "Tensile strength test: measured value 487 MPa, specification minimum 355 MPa. Result: PASS. Test method: ISO 6892-1 tensile testing at ambient temperature.",
+    "Surface inspection: visual examination performed per ISO 8501-1. No pitting, lamination, or surface cracks observed. Inspector: Klaus Weber. Result: PASS.",
+    "Delivery details: 250 units delivered against PO 4500123456. Quantity accepted: 250. No shortages or damages noted on receipt. QM usage decision: Unrestricted use.",
+    "Storage recommendation: store in dry covered warehouse, avoid direct contact with ground. Maximum stack height 3 pallets. Protect from moisture and corrosive atmospheres."
 ]
 
 print("Embedding and storing test chunks...")
@@ -461,13 +461,13 @@ for i, chunk in enumerate(TEST_CHUNKS):
 stored = count_vectors(TEST_MATERIAL)
 print(f"\nStored {stored} vectors for material {TEST_MATERIAL}")
 
-print("\nSearching: 'What precautions should I take near open flames?'")
-results = search_similar("What precautions should I take near open flames?", TEST_MATERIAL)
+print("\nSearching: 'What test method was used for tensile strength verification?'")
+results = search_similar("What test method was used for tensile strength verification?", TEST_MATERIAL)
 for r in results:
     print(f"  Score: {r['score']:.4f} | {r['chunk'][:80]}...")
 
-print("\nSearching: 'What PPE is required?'")
-results = search_similar("What PPE is required?", TEST_MATERIAL)
+print("\nSearching: 'What are the storage and handling requirements for this material?'")
+results = search_similar("What are the storage and handling requirements for this material?", TEST_MATERIAL)
 for r in results:
     print(f"  Score: {r['score']:.4f} | {r['chunk'][:80]}...")
 ```
@@ -483,46 +483,34 @@ Expected output (your numbers will vary slightly):
 
 ```
 Embedding and storing test chunks...
-  Stored chunk 0: dim=768, preview='Acetone is a highly flammable liquid and vapor. Fl...'
-  Stored chunk 1: dim=768, preview='First aid for skin contact: Wash with soap and wat...'
-  Stored chunk 2: dim=768, preview='GHS Classification: Flammable Liquid Category 2. E...'
-  Stored chunk 3: dim=768, preview='Personal Protective Equipment: Wear chemical resis...'
-  Stored chunk 4: dim=768, preview='Storage: Store in a cool, dry, well-ventilated are...'
+  Stored chunk 0: dim=768, preview='Batch lot number: BATCH-2024-0871. Material: Stee...'
+  Stored chunk 1: dim=768, preview='Tensile strength test: measured value 487 MPa, spe...'
+  Stored chunk 2: dim=768, preview='Surface inspection: visual examination performed pe...'
+  Stored chunk 3: dim=768, preview='Delivery details: 250 units delivered against PO 45...'
+  Stored chunk 4: dim=768, preview='Storage recommendation: store in dry covered wareho...'
 
-Stored 5 vectors for material ACETONE-TEST-001
+Stored 5 vectors for material BATCH-QC-MAT-001
 
-Searching: 'What precautions should I take near open flames?'
-  Score: 0.8124 | Acetone is a highly flammable liquid and vapor. Flash point: -18°C. Keep aw...
-  Score: 0.7456 | Storage: Store in a cool, dry, well-ventilated area away from ignition source...
-  Score: 0.6203 | Personal Protective Equipment: Wear chemical resistant gloves and safety gla...
-  Score: 0.5891 | GHS Classification: Flammable Liquid Category 2. Eye Irritant Category 2A...
-  Score: 0.5102 | First aid for skin contact: Wash with soap and water for at least 15 minute...
+Searching: 'What test method was used for tensile strength verification?'
+  Score: 0.8124 | Tensile strength test: measured value 487 MPa, specification minimum 355 MPa...
+  Score: 0.7456 | Surface inspection: visual examination performed per ISO 8501-1. No pitting...
+  Score: 0.6203 | Batch lot number: BATCH-2024-0871. Material: Steel rod grade S355. Supplier...
+  Score: 0.5891 | Storage recommendation: store in dry covered warehouse, avoid direct contact...
+  Score: 0.5102 | Delivery details: 250 units delivered against PO 4500123456. Quantity accept...
 
-Searching: 'What PPE is required?'
-  Score: 0.8442 | Personal Protective Equipment: Wear chemical resistant gloves and safety gla...
-  Score: 0.6334 | Storage: Store in a cool, dry, well-ventilated area away from ignition source...
-  Score: 0.5912 | First aid for skin contact: Wash with soap and water for at least 15 minute...
-  Score: 0.5108 | Acetone is a highly flammable liquid and vapor. Flash point: -18°C. Keep aw...
-  Score: 0.4789 | GHS Classification: Flammable Liquid Category 2. Eye Irritant Category 2A...
+Searching: 'What are the storage and handling requirements for this material?'
+  Score: 0.8442 | Storage recommendation: store in dry covered warehouse, avoid direct contact...
+  Score: 0.6334 | Delivery details: 250 units delivered against PO 4500123456. Quantity accept...
+  Score: 0.5912 | Batch lot number: BATCH-2024-0871. Material: Steel rod grade S355. Supplier...
+  Score: 0.5108 | Tensile strength test: measured value 487 MPa, specification minimum 355 MPa...
+  Score: 0.4789 | Surface inspection: visual examination performed per ISO 8501-1. No pitting...
 ```
 
-This is exactly what you want to see. For the open-flames question, the flammability chunk wins at 0.81, with the storage chunk (which mentions "ignition sources") in second place at 0.74. The first-aid chunk, which has nothing to do with the question, ranks last at 0.51. For the PPE question, the actual PPE chunk wins decisively at 0.84.
-
-```
-# Expected terminal output:
-Stored 3 chunks for material: acetone-test
-Query 1: "What are the fire hazards of acetone?"
-  Result 1 (score: 0.923): "Acetone is highly flammable..."
-  Result 2 (score: 0.887): "Keep away from heat sources..."
-Query 2: "What first aid is needed for skin contact?"
-  Result 1 (score: 0.941): "Wash affected area with soap and water..."
-  Result 2 (score: 0.812): "Remove contaminated clothing..."
-Vector search: OK
-```
+This is exactly what you want to see. For the tensile test method question, the tensile strength chunk wins at 0.81, with the surface inspection chunk (which also describes a test methodology) in second place at 0.74. The delivery details chunk, which has nothing to do with the question, ranks last at 0.51. For the storage question, the storage recommendation chunk wins decisively at 0.84.
 
 Note the absolute scores. The top match for a well-targeted question lands around 0.80–0.85. This is the band where you should expect "good" semantic matches with `text-embedding-004`. Anything above 0.90 usually means near-paraphrase. Anything below 0.50 usually means the model is reaching.
 
-The same vector infrastructure serves every document type without modification. A storage requirements question for an MSDS returns the Section 7 chunk. An approved quantity question for an invoice returns the line-item summary chunk. A viscosity test question for a batch certificate returns the test result chunk. The question changes. The search code does not. This is the commercial value of building on HANA's `REAL_VECTOR` column rather than on a document-type-specific text search engine.
+The same vector infrastructure serves every document type without modification. A tensile test method question for a batch certificate returns the test result chunk. A storage requirements question for an MSDS returns the Section 7 chunk. An approved quantity question for an invoice returns the line-item summary chunk. The question changes. The search code does not. This is the commercial value of building on HANA's `REAL_VECTOR` column rather than on a document-type-specific text search engine.
 
 > **Tip:** The scores are reproducible only if you re-embed identical text against the same model version. Vertex AI may update the model under the same name; if your scores drift over time, that is the most likely cause. Pin to a specific version if reproducibility matters.
 
@@ -537,8 +525,8 @@ Time for honesty. Vector search is genuinely powerful, but it has a sharp limita
 Run the test one more time, with a precise factual question:
 
 ```python
-print("\nSearching: 'What is the GHS hazard code for acetone?'")
-results = search_similar("What is the GHS hazard code for acetone?", TEST_MATERIAL)
+print("\nSearching: 'What is the certificate number for batch BATCH-2024-0871?'")
+results = search_similar("What is the certificate number for batch BATCH-2024-0871?", TEST_MATERIAL)
 for r in results:
     print(f"  Score: {r['score']:.4f} | {r['chunk'][:80]}...")
 ```
@@ -546,30 +534,30 @@ for r in results:
 You will see something like:
 
 ```
-Searching: 'What is the GHS hazard code for acetone?'
-  Score: 0.6534 | GHS Classification: Flammable Liquid Category 2. Eye Irritant Category 2A...
-  Score: 0.5821 | Acetone is a highly flammable liquid and vapor. Flash point: -18°C. Keep aw...
-  Score: 0.4912 | Storage: Store in a cool, dry, well-ventilated area away from ignition source...
+Searching: 'What is the certificate number for batch BATCH-2024-0871?'
+  Score: 0.6534 | Batch lot number: BATCH-2024-0871. Material: Steel rod grade S355. Supplier: ACME...
+  Score: 0.5821 | Tensile strength test: measured value 487 MPa, specification minimum 355 MPa...
+  Score: 0.4912 | Surface inspection: visual examination performed per ISO 8501-1...
   ...
 ```
 
-The GHS classification chunk does come back first — at 0.65. That is a noticeably weaker score than the 0.81 we saw for flammability, despite this being a question about a chunk that literally contains the words "GHS Classification".
+The certificate chunk does come back first — at 0.65. That is noticeably weaker than the 0.81 we saw for the methodology question, despite this being a question about a chunk that literally contains "QC-CERT-44781".
 
-Why so weak? Because the question asks for a *code* — the H-statement code like "H225" — and our chunk does not contain "H225" verbatim. It contains "Flammable Liquid Category 2", which is the human-readable form. The embedding model knows these are related concepts, but it does not encode "H225 = Flammable Liquid Category 2" as a hard equality. It encodes them as *near-each-other-in-768-d-space*, which is fuzzier.
+Why so weak? Because the question asks for a specific *identifier string* — "QC-CERT-44781" — and our chunk does not contain that exact phrasing in the query. The embedding model knows certificates and batch numbers are related concepts, but it encodes them as *near-each-other-in-768-d-space*, which is fuzzier than equality. The right answer to "What is the certificate number for batch BATCH-2024-0871?" is "QC-CERT-44781" — not a paragraph that mentions certificates somewhere.
 
-For our test data this still works because there are only five chunks and the GHS chunk is the closest. Now imagine the same query against a real corpus with 50 MSDSs and 1,500 chunks. Many chunks will mention "Category 2" in different contexts — fire protection regulations, transport classifications, industrial hygiene reports. The signal-to-noise ratio collapses. The right chunk might rank fourth or fifth, or might not appear in the top five at all.
+For our test data this still works because there are only five chunks. Now imagine the same query against a real corpus with 500 batch certificates and 15,000 chunks. Many chunks will mention "certificate" in different contexts — quality reports, delivery notes, compliance filings. The signal-to-noise ratio collapses. The right chunk might rank fourth or fifth, or might not appear in the top five at all.
 
-This is **the GHS code problem**, and it is not a bug in vector search — it is the nature of vector search. Embeddings are wonderful for fuzzy semantic matching ("precautions near open flame" → "keep away from heat and ignition sources"). They are bad at exact symbolic recall ("H225" → the row whose `ghsCode` literal equals `"H225"`).
+This is **the exact identifier problem**, and it is not a bug in vector search — it is the nature of vector search. Embeddings are wonderful for fuzzy semantic matching ("tensile test methodology" → "ISO 6892-1 tensile testing at ambient temperature"). They are bad at exact symbolic recall ("QC-CERT-44781" → the row whose certificate number literal equals "QC-CERT-44781").
 
 Three categories of question hit this limitation hard:
 
-1. **Identifier lookups.** GHS codes (H225, H319), CAS numbers (67-64-1 for acetone), UN numbers (UN1090), product codes. Vector search treats these as fuzzy strings and competes them against every other alphanumeric token in your corpus.
-2. **Aggregations and counts.** "How many of my materials have flash point below 0°C?" is impossible for vector search — there is no "count" embedding direction. You need structured query.
-3. **Negation and exclusion.** "Show me MSDSs that do *not* require respiratory protection." Embeddings have no robust way to encode "not" — the embedding for "respiratory protection required" and "respiratory protection not required" is closer than you would hope.
+1. **Identifier lookups.** Certificate numbers (QC-CERT-44781), batch lot numbers (BATCH-2024-0871), purchase order numbers (4500123456), equipment numbers. Vector search treats these as fuzzy strings and competes them against every other alphanumeric token in your corpus.
+2. **Aggregations and counts.** "How many of our batches from supplier ACME Steel AG passed tensile testing this quarter?" is impossible for vector search — there is no "count" embedding direction. You need structured query.
+3. **Negation and exclusion.** "Show me inspection reports where the inspector did *not* record a usage decision of 'Restricted'." Embeddings have no robust way to encode "not" — the embedding for "usage decision: Restricted" and "usage decision: not Restricted" is closer than you would hope.
 
-SAP customers running on HANA have always thought in structured terms. Materials, hazard codes, GHS classifications, batch test results, invoice amounts — these are not free text. They are master data. They live in tables with foreign keys. They are the kind of thing a knowledge graph models naturally.
+SAP customers running on HANA have always thought in structured terms. Materials, batch lot numbers, certificate identifiers, test result values — these are not free text. They are master data. They live in tables with foreign keys. They are the kind of thing a knowledge graph models naturally.
 
-That is the bridge into Chapter 4. We will take the same material document, extract its structured facts into RDF triples, store them in HANA's graph engine, and query them with SPARQL. When the regulatory auditor asks "What is the GHS hazard classification for this chemical?", we will return "H225" with full confidence — not by guessing from a 0.65 cosine similarity, but by traversing a graph relationship that was set when the document was ingested.
+That is the bridge into Chapter 4. We will take the same material document, extract its structured facts into RDF triples, store them in HANA's graph engine, and query them with SPARQL. When the quality engineer asks "What is the certificate number for this batch?", we will return "QC-CERT-44781" with full confidence — not by guessing from a 0.65 cosine similarity, but by traversing a graph relationship that was set when the document was ingested.
 
 The full Hybrid RAG agent in Chapter 7 runs both retrievers in parallel and lets a routing classifier decide which answer to trust. Vector search owns the fuzzy questions. The knowledge graph owns the precise ones. Neither is sufficient alone; together they cover the question space enterprise document users actually ask.
 
@@ -585,7 +573,7 @@ In this chapter you built a working vector search system on HANA Cloud. The majo
 - **The cosine similarity query has five clauses, each load-bearing.** `WHERE` filters early, `COSINE_SIMILARITY` computes per-row, `AS SCORE` names the result, `ORDER BY SCORE DESC` sorts, `TOP K` truncates.
 - **Chunking adapts to document structure; the storage code does not.** MSDS documents use OSHA section boundaries. Invoices use line-item blocks. Batch certificates use test result sections. The same `MSDS_VECTORS` table and `search_similar` function serve all document types.
 - **The `MATERIAL_NUMBER` column is the anchor to SAP MM.** The CAP layer validates it against S/4HANA product master via API_PRODUCT_SRV before accepting uploads. Every vector in the table is traceable to a real, validated SAP material.
-- **Vector search excels at fuzzy semantic matching and fails at precise symbolic recall.** The GHS code problem motivates the knowledge graph in Chapter 4.
+- **Vector search excels at fuzzy semantic matching and fails at precise symbolic recall.** The exact identifier problem — certificate numbers, batch lot numbers, PO numbers — motivates the knowledge graph in Chapter 4.
 
 The codebase now has working `hdb_srv.py`, `vertex_srv.py`, and `vector_srv.py` modules, plus a passing `test_vector.py` script. The vector retrieval half of the Hybrid RAG agent is live.
 
@@ -597,10 +585,10 @@ Before moving on to Chapter 4, verify the following:
 
 - [ ] `agents/srv/vector_srv.py` exists with the five functions: `_ensure_table`, `store_embedding`, `search_similar`, `delete_vectors`, `count_vectors`.
 - [ ] Running `python test_vector.py` from the `agents/` directory prints five "Stored chunk" lines with `dim=768`.
-- [ ] The test prints two search result blocks. The first ranks the flammability chunk at the top (~0.80). The second ranks the PPE chunk at the top (~0.84).
-- [ ] Opening the `MSDS_VECTORS` table in the SAP HANA Database Explorer shows five rows for `MATERIAL_NUMBER = 'ACETONE-TEST-001'`.
-- [ ] The third (optional) test — querying for "What is the GHS hazard code for acetone?" — returns the GHS chunk at the top, but with a noticeably lower score (~0.65). You understand why.
+- [ ] The test prints two search result blocks. The first ranks the tensile strength chunk at the top (~0.81). The second ranks the storage recommendation chunk at the top (~0.84).
+- [ ] Opening the `MSDS_VECTORS` table in the SAP HANA Database Explorer shows five rows for `MATERIAL_NUMBER = 'BATCH-QC-MAT-001'`.
+- [ ] The third (optional) test — querying for "What is the certificate number for batch BATCH-2024-0871?" — returns the batch header chunk at the top, but with a noticeably lower score (~0.65). You understand why.
 
-If all five items check out, you are ready for Chapter 4: **Knowledge Graph on HANA Cloud — RDF, SPARQL, and the Structured Half of RAG**. We will set up HANA's graph engine, load RDF triples extracted from the same material document, and query them with SPARQL — solving the GHS code problem in the most direct way possible.
+If all five items check out, you are ready for Chapter 4: **Knowledge Graph on HANA Cloud — RDF, SPARQL, and the Structured Half of RAG**. We will set up HANA's graph engine, load RDF triples extracted from the same material document, and query them with SPARQL — solving the exact identifier problem in the most direct way possible.
 
 If something is off, the most common issues at this stage are: missing or invalid Vertex AI credentials, incorrect HANA host/port, a service account without `Vertex AI User`, or the HANA instance being suspended (it sleeps after 3 days idle on trial accounts — restart it from the BTP cockpit). Fix and re-run `test_vector.py` until you see the expected output. The next chapter assumes a working `vector_srv.py`.
