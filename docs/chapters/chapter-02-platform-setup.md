@@ -221,58 +221,93 @@ Enabling the API takes about 30 seconds. Once enabled, you will see the Vertex A
 
 > **Note:** Enabling Vertex AI automatically enables several dependent APIs (Cloud Storage, Cloud Resource Manager, etc.). This is expected.
 
-### Creating a Service Account
+### GCP Authentication — What Actually Works
 
-Your BTP application needs credentials to call the Vertex AI API. GCP uses **service accounts** for machine-to-machine authentication. This is the right tool — not user accounts, not OAuth flows.
+Before creating a service account, you need to understand a critical GCP policy change that affects most accounts.
+
+> **Warning — Service Account Key Creation May Be Blocked:** Since May 3, 2024, GCP enforces `iam.disableServiceAccountKeyCreation` by default on all new organisations. If you are using a corporate Google account, this policy is almost certainly active — clicking **Add Key** will return the error "Service account key creation is disabled." This is by design. GCP's own documentation states: *"Service account keys are a security risk if not managed correctly. Choose a more secure alternative whenever possible."*
+>
+> Official GCP reference: `cloud.google.com/iam/docs/keys-create-delete`
+
+![Service Account Key Disabled](docs/screenshots/gcp/service-account-key-disabled.png)
+*Figure 2.x — GCP blocks service account key creation under the `iam.disableServiceAccountKeyCreation` org policy, enforced by default since May 2024.*
+
+**Use a personal Google account for this book.** Sign up at `cloud.google.com/free` with a personal Gmail — not your corporate Google Workspace account. Personal free-tier accounts are not subject to corporate org policies and allow the authentication approach described below.
+
+This book uses two authentication approaches depending on context:
+
+| Context | Method |
+|---------|--------|
+| Local development (Chapters 2–9) | Application Default Credentials via `gcloud` CLI |
+| BTP Cloud Foundry deployment (Chapter 10) | API Key stored as CF environment variable |
+
+### Creating a Service Account
 
 Go to **IAM & Admin** → **Service Accounts** → **Create Service Account**.
 
 | Field | Value |
 |-------|-------|
 | Service Account Name | `agentic-rag-btp-sa` |
-| Service Account ID | Auto-generated from `agentic-rag-btp-sa` |
+| Service Account ID | Auto-generated |
 | Description | `Service account for Agentic Hybrid RAG on SAP BTP` |
 
-> **Note:** Navigate to IAM & Admin → Service Accounts → Create Service Account → enter name `hybrid-rag-sa` → Continue.
-
-Click **Create and Continue**.
-
-In Step 2 (Grant access), add the following role:
+Click **Create and Continue**. In the role assignment step, add:
 
 | Role | Purpose |
 |------|---------|
-| **Vertex AI User** | Allows calling Vertex AI APIs (LLM and embeddings) |
-
-> **Note:** In the role assignment step, search for "Vertex AI User" and select it. Click Continue → Done.
+| **Vertex AI User** | Calling Vertex AI APIs (Gemini LLM + text-embedding-004) |
 
 Click **Continue** → **Done**.
 
-### Downloading the Service Account Key
+### Option A — Local Development: Application Default Credentials (ADC)
 
-You will now download a JSON key file that contains the credentials your BTP application will use.
+For Chapters 2–9, running the FastAPI agent locally, use ADC. No JSON key file is downloaded or stored.
 
-From the Service Accounts list, click the service account you just created → **Keys** tab → **Add Key** → **Create new key** → **JSON** → **Create**.
+Install the gcloud CLI from `cloud.google.com/sdk/docs/install`, then run:
 
-> **Note:** Click your service account → Keys tab → Add Key → Create new key → JSON → Create. The key file downloads automatically.
-
-A JSON file will download automatically. It looks like this:
-
-```json
-{
-  "type": "service_account",
-  "project_id": "agentic-rag-btp",
-  "private_key_id": "abc123...",
-  "private_key": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n",
-  "client_email": "agentic-rag-btp-sa@agentic-rag-btp.iam.gserviceaccount.com",
-  "client_id": "123456789",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token"
-}
+```bash
+gcloud auth application-default login
+gcloud config set project YOUR_PROJECT_ID
 ```
 
-> **Warning:** This file contains your private key. Treat it like a password. Do not commit it to git. Do not share it. Store it somewhere safe on your machine — we will upload it to BTP Destination Service in the next section, and then you will not need it in plaintext again.
+Your browser opens a Google login page. Sign in with your personal Google account. The gcloud CLI stores credentials at:
 
-Save the file as `gcp-sa-key.json` in a secure location outside your project directory.
+```
+~/.config/gcloud/application_default_credentials.json   # macOS/Linux
+%APPDATA%\gcloud\application_default_credentials.json   # Windows
+```
+
+The Vertex AI Python SDK picks these up automatically — no `GOOGLE_APPLICATION_CREDENTIALS` environment variable needed. Your `.env` file only needs:
+
+```bash
+GOOGLE_CLOUD_PROJECT=your-project-id
+GCP_LOCATION=us-central1
+```
+
+> **How ADC works:** The Vertex AI SDK checks for credentials in this order: (1) `GOOGLE_APPLICATION_CREDENTIALS` env var, (2) ADC file from `gcloud auth application-default login`, (3) attached service account metadata. For local development, step 2 handles it automatically. Official reference: `cloud.google.com/docs/authentication/application-default-credentials`
+
+### Option B — BTP Cloud Foundry Deployment: API Key
+
+When you deploy to BTP CF in Chapter 10, the container has no gcloud CLI and no access to your local ADC file. Use a GCP API key scoped to Vertex AI.
+
+In GCP Console → **APIs & Services** → **Credentials** → **Create Credentials** → **API Key**.
+
+Once created, click **Edit API Key** and restrict it:
+
+| Setting | Value |
+|---------|-------|
+| API restrictions | Restrict key → Vertex AI API |
+| Application restrictions | None (for CF deployment) |
+
+Copy the key value. You will set it as a CF environment variable in Chapter 10:
+
+```bash
+cf set-env agentic-rag-backend GOOGLE_API_KEY "AIza..."
+```
+
+> **Never put the API key in `manifest.yml` or commit it to git.** Set it via `cf set-env` only. The key value is never written to any file in the repository.
+
+> **Note:** If you later need to rotate or revoke the key, go to APIs & Services → Credentials → select the key → Delete. A new key can be generated in under a minute.
 
 ---
 
