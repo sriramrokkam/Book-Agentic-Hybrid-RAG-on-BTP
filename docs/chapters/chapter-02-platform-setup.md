@@ -171,8 +171,6 @@ Sign in with your Google account.
 
 After signup, you will land on the **GCP Console**.
 
-*Screenshot pending: GCP Console home page showing the project selector in the top navigation bar and Vertex AI API enabled.*
-
 ### Creating a New Project
 
 Click the project selector at the top of the page → **New Project**.
@@ -279,7 +277,8 @@ This is the SAP-native way to manage external service credentials. In BTP enterp
 
 In the BTP Cockpit, go to your trial subaccount → **Connectivity** → **Destinations** → **New Destination**.
 
-*Screenshot pending: BTP Cockpit → Connectivity → Destinations — the New Destination button and the configured VertexAI destination entry.*
+![BTP Destinations — Create New Destination](docs/screenshots/btp/07-btp-destination.png)
+*Figure 2.6 — BTP Cockpit → Connectivity → Destinations. Click **Create** → **From Scratch** to open the destination configuration form.*
 
 The correct authentication type is **OAuth2ClientCredentials**. BTP will fetch a short-lived access token from Google's token endpoint before each Vertex AI API call. The values come directly from your service account JSON key file.
 

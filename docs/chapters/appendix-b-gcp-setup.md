@@ -88,8 +88,6 @@ Once created, use the project selector dropdown to switch to the new project. Co
 
 **Record the Project ID.** The Project ID is different from the Project Name. It is a lowercase string, often `msds-hybrid-rag` followed by a number suffix (e.g., `msds-hybrid-rag-423901`). Find it on the project dashboard or in the project selector dialog. You will use this as `GCP_PROJECT_ID` in your `.env` file.
 
-*[Screenshot: GCP new project creation form]*
-
 ---
 
 ## B.5 Step 3 — Enable the APIs
