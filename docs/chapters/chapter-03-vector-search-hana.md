@@ -73,7 +73,7 @@ CREATE TABLE MSDS_VECTORS (
 );
 ```
 
-> **About the table name:** The table is named MSDS_VECTORS because the reference implementation was first built for MSDS documents. In a multi-document-type deployment, you would use DOCUMENT_VECTORS with an additional DOC_TYPE column, or a separate table per type. The core SQL pattern — REAL_VECTOR column, COSINE_SIMILARITY search, MATERIAL_NUMBER filter — is identical regardless of document type.
+> **About the table name:** Named MSDS_VECTORS in the reference implementation. In a broader deployment this would be MATERIAL_VECTORS. The SQL pattern is identical either way.
 
 `MATERIAL_NUMBER` is the SAP material identifier — the same Material Number you would look up in SAP MM via transaction MM03. In the Material Document Intelligence Platform, the CAP service layer validates this value against real S/4HANA product master data via API_PRODUCT_SRV before accepting any document upload. This ensures that vectors are always anchored to a legitimate, active SAP material — not a free-text label that could drift out of sync with the product master. We use it as the tenant key so we can search within a single material's chunks. `CHUNK_TEXT` is the raw text of the chunk; `CHUNK_INDEX` lets us reconstruct order if we need to. `EMBEDDING` is the 768-dimensional vector we computed from `CHUNK_TEXT`.
 
