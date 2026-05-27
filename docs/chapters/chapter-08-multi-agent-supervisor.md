@@ -1,26 +1,26 @@
 # Chapter 8: The Multi-Agent Supervisor Pattern
 
-In Chapter 7 we built a hybrid RAG agent that runs two retrieval strategies in parallel and merges their results. For the majority of questions — "what are the hazard codes?", "what are the storage instructions?" — that agent is the right tool. It is fast, deterministic, and requires no coordination overhead.
+In Chapter 7 we built a hybrid RAG agent that runs two retrieval strategies in parallel and merges their results. For the majority of questions about a single document — "did this batch pass tensile testing?", "what are the storage conditions for this material?" — that agent is the right tool. It is fast, deterministic, and requires no coordination overhead.
 
-But consider a different class of question: "I am setting up a new chemical storage facility that will handle acetone. What hazard classifications do I need to post, what are the legal worker exposure limits, and what personal protective equipment should I provide?" That question requires three distinct types of expertise: GHS classification knowledge, regulatory compliance knowledge, and safety procedure knowledge. A single agent with a single retrieval pass will mix these domains, risk missing one, and produce an answer that is harder to reason about.
+But SAP enterprise users ask cross-domain questions. A procurement manager reviewing a new supplier might ask: "For material MAT-S355-001, what certifications did ACME Steel AG provide, what were the test results across all batches in Q1 2024, and are there any quality holds active against this material in the system?" That question spans three distinct knowledge domains — certificate metadata, batch test results, and QM inspection outcomes. A single retrieval pass against a flat vector index returns a mixed bag: some certificate chunks, some test result rows, possibly some maintenance notes that scored highly by cosine similarity. None of the three sub-questions receives focused, complete retrieval.
 
-This is the complexity ceiling of a single-agent system. When a question spans multiple domains and each domain requires focused, specialised reasoning, a team of specialist agents produces better answers than a generalist agent working alone.
+In SAP terms, this is the same reason S/4HANA separates Materials Management, Quality Management, and Plant Maintenance into distinct modules rather than one monolithic transaction. Domain separation produces better data quality and cleaner query paths. The same principle applies to agent design.
 
-This chapter introduces the **supervisor pattern**: a coordinator agent that receives complex questions, decomposes them, routes sub-questions to specialist agents, and synthesises their results into a final answer. The pattern is demonstrated with MSDS-specific specialists, but the architecture is general — the same supervisor, state machine, and merge logic apply to any SAP document type.
+This chapter introduces the **supervisor pattern**: a coordinator agent that receives complex questions, decomposes them into domain-scoped sub-questions, routes each to a specialist agent that uses the right retrieval strategy, and synthesises their results into a final answer. The pattern is demonstrated with MSDS-specific specialists, but the architecture is general — the same supervisor, state machine, and merge logic apply to any SAP document type.
 
 ---
 
 ## 8.1 Why multi-agent for SAP enterprise
 
-A generalist agent has one prompt, one retrieval context, and one LLM call to produce its answer. When questions are simple and focused, this is efficient. When questions are complex and multi-domain, it creates three problems.
+On SAP BTP, three structural problems emerge when a single agent handles multi-domain document questions.
 
-**Problem 1: Context dilution.** A single retrieval pass retrieves the top-5 passages by cosine similarity. For a multi-domain question, those 5 passages will be distributed across domains — perhaps 2 about hazards, 2 about storage, 1 about first aid. Each domain gets insufficient context.
+**Problem 1: Context dilution.** A single retrieval pass retrieves the top-5 chunks by cosine similarity. For a multi-domain question, those 5 chunks scatter across domains: perhaps 2 about batch test results, 2 about supplier data, 1 about storage conditions. Each domain gets two chunks of context at best. For a quality engineer who needs a complete picture of batch certification status, two chunks is not enough — the certificate number, the test values, the certifying lab, and the approval date may all live in different chunks that were not top-ranked.
 
-**Problem 2: Prompt overloading.** The LLM receives a long prompt with mixed signals. It must simultaneously reason about regulatory thresholds, GHS classifications, and PPE requirements. The answer tends to be shallow across all three rather than deep on any one.
+**Problem 2: Mismatched retrieval strategy per domain.** Different knowledge types require different retrieval strategies. A question about a specific certificate number (structured identifier) belongs in the knowledge graph — it is a triple, not a chunk. A question about how the supplier described their test methodology (narrative prose) belongs in the vector store. A question about supplier qualification status might need both. A single-agent system applies one strategy uniformly; a specialist agent applies the right strategy for its domain.
 
-**Problem 3: Uneven retrieval strategy per domain.** Different document sections require different retrieval strategies. A question about GHS hazard codes (structured data) is best answered from the knowledge graph, where codes and descriptions are stored as precise triples. A question about first aid procedures (narrative text) is best answered from the vector store, where the prose of Section 4 lives. A question about regulatory compliance requires both — structured exposure limits from the KG and narrative regulatory context from the vector store. A generalist agent applies one strategy to all three. A specialist agent applies the right strategy to its domain.
+**Problem 3: Prompt dilution under S/4HANA integration.** When the agent also has access to live S/4HANA data via API_PRODUCT_SRV (product master, quality holds, vendor data), the LLM receives a prompt containing SAP API results, KG triples, and vector chunks simultaneously. A generalist agent must reason across all of them at once. A specialist agent reasons only within its domain and hands a focused result to the supervisor for synthesis.
 
-The supervisor pattern solves all three by decomposing the question *before* retrieval — routing each sub-question to a specialist that uses the correct retrieval strategy for that knowledge type.
+The supervisor pattern solves all three by decomposing the question *before* retrieval — each sub-question goes to the specialist with the correct retrieval strategy for that knowledge type.
 
 ---
 
@@ -38,7 +38,7 @@ The supervisor pattern has four components:
 ![Multi-Agent Supervisor Pattern](docs/screenshots/diagrams/09-supervisor-pattern.png)
 *Figure 8.1: The multi-agent supervisor — the supervisor decomposes the question and routes sub-questions to specialist agents running in parallel. The SummaryAgent synthesises all results into the final answer.*
 
-The supervisor does not answer the question. It only routes. This separation of concerns is what makes the pattern scale: you can add a new specialist agent without changing the supervisor prompt, and each specialist can be optimised independently.
+The supervisor does not answer the question. It only decomposes and routes. This separation keeps each specialist prompt focused and small, each retrieval scoped to one domain, and each specialist independently testable. Adding a new document type — invoices, maintenance records, inspection reports — means adding a specialist with the right prompt and KG predicates; the supervisor, the state machine, and the merge logic need not change.
 
 ---
 

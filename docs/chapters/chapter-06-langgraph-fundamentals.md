@@ -410,7 +410,7 @@ if __name__ == "__main__":
 
 ## 6.10 Tool use in LangGraph
 
-LangGraph supports tools — Python functions that the LLM can choose to call. For the hybrid RAG agent, we will not use the LangGraph tool mechanism (we use direct parallel dispatch instead, as you will see in Chapter 7). But understanding tools is useful if you extend the agent later.
+LangGraph supports tools — Python functions that the LLM can choose to call based on the conversation. In a tool-enabled graph, the LLM inspects its available tools, decides which to call, and the selected tool's output is added back into the state for the next node. For the hybrid RAG agent in this book, we deliberately do not use this mechanism — we use direct parallel dispatch of both chains on every query regardless of what the LLM might prefer. The reason is covered in the note below, but understanding tool-enabled graphs is useful if you build agent extensions on top of this platform later.
 
 Define a tool with the `@tool` decorator:
 
@@ -442,7 +442,7 @@ graph.add_conditional_edges(
 graph.add_edge("tools", "answer")
 ```
 
-This creates a ReAct loop: the LLM decides whether to call a tool, the tool runs, and the result feeds back into the next LLM call.
+This creates a tool-calling loop: the LLM inspects the state, decides whether a tool call is needed, and if so, the `ToolNode` executes the selected function and writes the result back to state.
 
 > **Note:** Chapter 7 intentionally avoids this ReAct pattern for the main retrieval. We run both vector and KG chains on every query, regardless of what the LLM might choose. This gives deterministic latency and prevents the LLM from skipping a retrieval path it thinks is unnecessary — a critical property for enterprise systems where consistent, complete answers matter more than adaptive efficiency.
 

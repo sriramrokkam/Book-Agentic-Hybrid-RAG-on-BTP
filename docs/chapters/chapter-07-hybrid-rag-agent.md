@@ -316,7 +316,7 @@ The merge function is the heart of hybrid RAG. It receives whatever the two chai
 
 **Only the vector store returns results** — narrative context answer. The document passages are summarised and returned. No specific codes are asserted beyond what appears in the text.
 
-**Neither returns results** — honest gap acknowledgement. The system says it cannot find information and instructs the user to verify the material number or rephrase. It does not hallucinate. This honest-gap behaviour is critical for enterprise trust: a system that occasionally says "I don't know" is far more trustworthy than one that always produces an answer, even when the answer is fabricated.
+**Neither returns results** — honest gap acknowledgement. The system returns a message indicating it cannot find the requested information and asks the user to verify the material number or rephrase the question. No value is asserted beyond what HANA returned. In an SAP enterprise context this matters: a quality engineer acting on fabricated compliance data creates a liability. An explicit "not found" is a correct, auditable outcome.
 
 ```python
 def merge_results(
