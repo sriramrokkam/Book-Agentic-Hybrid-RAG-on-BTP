@@ -195,9 +195,9 @@ Implements the multi-agent supervisor LangGraph. Three-node graph: `supervisor` 
 | `supervisor_app` | Module-level pre-built instance; safe to import and call from `main.py` |
 | `supervisor_node(state)` | Calls Gemini with `SUPERVISOR_PROMPT` to pick specialists and write sub-questions into state |
 | `parallel_specialists_node(state)` | Runs only the specialists listed in `specialists_needed` via `ThreadPoolExecutor` |
-| `hazard_agent(state)` | KG-focused; answers questions about GHS codes and hazard classifications |
-| `compliance_agent(state)` | KG-focused; answers questions about exposure limits and regulatory thresholds |
-| `safety_agent(state)` | Vector-focused; answers questions about precautions, PPE, first aid |
+| `hazard_agent(state)` | KG-focused; answers questions about test methods, test results, and certificate identifiers |
+| `compliance_agent(state)` | KG-focused; answers questions about acceptance criteria and specification tolerances |
+| `safety_agent(state)` | Vector-focused; answers questions about storage conditions, handling instructions, delivery requirements |
 | `summary_agent(state)` | Synthesises answers from all invoked specialists into a single structured response |
 
 ---
@@ -308,7 +308,7 @@ CDS data model. Namespace `msds`.
 
 | Entity | Key | Description |
 |--------|-----|-------------|
-| `Documents` | `materialNumber` | Tracks each ingested MSDS document with dual-pipeline status columns |
+| `Documents` | `materialNumber` | Tracks each ingested material document with dual-pipeline status columns |
 | `QueryLog` | `ID` (UUID) | Optional audit trail for every query submitted via the UI |
 
 **`Documents` columns**
@@ -372,18 +372,20 @@ OWL ontology in Turtle format. Namespace prefix: `msds: <http://msds.knowledge-g
 
 | IRI | Label | Description |
 |-----|-------|-------------|
-| `msds:Material` | Material | The MSDS document subject |
-| `msds:HazardCode` | GHS Hazard Code | GHS classification codes (e.g. H225, H319) |
-| `msds:ExposureLimit` | Occupational Exposure Limit | TWA / STEL values |
-| `msds:Precaution` | Safety Precaution | Handling, storage, PPE instructions |
+| `msds:Material` | Material | The material batch subject |
+| `msds:CertifyingOrg` | Certifying Organisation | The supplier or lab that issued the certificate |
+| `msds:TestResult` | Test Result | A recorded test result with method and value |
+| `msds:CertifyingLab` | Certifying Laboratory | The testing laboratory (e.g. Bureau Veritas) |
 | `msds:Supplier` | Supplier | Manufacturer or distributor |
 
 **Object properties** (node to node)
 
 | Property | Domain | Range |
 |----------|--------|-------|
-| `msds:hasHazardCode` | `Material` | `HazardCode` |
-| `msds:hasExposureLimit` | `Material` | `ExposureLimit` |
+| `msds:certifiedBy` | `Material` | `CertifyingOrg` |
+| `msds:testResult` | `Material` | `TestResult` |
+| `msds:certificateNumber` | `Material` | literal string |
+| `msds:certifyingLab` | `Material` | `CertifyingLab` |
 | `msds:requiresPrecaution` | `Material` | `Precaution` |
 | `msds:hasSupplier` | `Material` | `Supplier` |
 
@@ -452,7 +454,7 @@ curl http://localhost:8000/health
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What are the GHS hazard codes?",
+    "question": "What test method was used for the tensile strength test?",
     "material_number": "ACETONE-001",
     "history": []
   }'
@@ -463,7 +465,7 @@ curl -X POST http://localhost:8000/query \
 curl -X POST http://localhost:8000/query-advanced \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What hazard codes apply and what PPE is required?",
+    "question": "What test results are recorded and what are the storage requirements?",
     "material_number": "ACETONE-001",
     "use_supervisor": true,
     "history": []
@@ -475,7 +477,7 @@ curl -X POST http://localhost:8000/query-advanced \
 curl -X POST http://localhost:8000/process-upload \
   -F "file=@/path/to/ACETONE-001.pdf" \
   -F "materialNumber=ACETONE-001" \
-  -F "materialName=Acetone"
+  -F "materialName=BATCH-QC-MAT-001"
 ```
 
 **Poll ingestion status**

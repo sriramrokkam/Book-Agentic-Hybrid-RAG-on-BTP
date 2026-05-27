@@ -60,7 +60,7 @@ This separation has three practical benefits. First, you can develop and test ea
 
 The data model lives in `db/schema.cds`. It defines two entities and a status type.
 
-The namespace `msds.kg` reflects the first document type in our implementation — Material Safety Data Sheets, processed into a Knowledge Graph. In a production deployment serving multiple document categories (invoices, batch certificates, quality inspection reports, maintenance manuals, legal filings), you would use a broader namespace — `documents.kg` or `materials.intelligence` — and extend the schema with a `documentType` field. The core entity structure is identical regardless: `materialNumber` as the anchor, `attachments` as the document store, status tracking fields for both pipeline stages.
+The namespace `msds.kg` reflects the naming convention of the reference implementation. In a production deployment serving multiple document categories (invoices, batch certificates, quality inspection reports, maintenance manuals), you would use a broader namespace — `documents.kg` or `materials.intelligence` — and extend the schema with a `documentType` field. The core entity structure is identical regardless: `materialNumber` as the anchor, `attachments` as the document store, status tracking fields for both pipeline stages.
 
 ```cds
 namespace msds.kg;
@@ -498,10 +498,10 @@ You will see `kg_done` and `vec_done` flip to `true` as each pipeline completes,
 ```bash
 curl -X POST http://localhost:4004/odata/v4/documents/chatQuery \
   -H "Content-Type: application/json" \
-  -d '{"message": "What are the first aid measures for skin contact?", "materialNumber": "ACETONE-001"}'
+  -d '{"message": "What test method was used and what were the tensile strength results?", "materialNumber": "BATCH-QC-MAT-001"}'
 ```
 
-The response includes the `answer` field with the agent's response and the `path_used` array indicating which retrieval chains contributed: `["kg_chain", "vector_chain"]` means both paths were used, which is the expected behavior for this type of factual question about a chemical document.
+The response includes the `answer` field with the agent's response and the `path_used` array indicating which retrieval chains contributed: `["kg_chain", "vector_chain"]` means both paths were used, which is the expected behavior for this type of factual question about a material document.
 
 ---
 

@@ -505,7 +505,7 @@ model = GenerativeModel("gemini-2.5-flash-preview-05-20")
 # Send a simple test prompt
 response = model.generate_content(
     "You are a helpful assistant for SAP developers. "
-    "In one sentence, explain what a Material Safety Data Sheet (MSDS) is."
+    "In one sentence, explain what a batch quality certificate is in SAP supply chain management."
 )
 
 print("Gemini response:")
@@ -524,9 +524,7 @@ You should see output like:
 
 ```
 Gemini response:
-A Material Safety Data Sheet (MSDS) is a standardized document that provides
-detailed information about the properties, hazards, safe handling procedures,
-and emergency response measures for a chemical substance or mixture.
+A batch quality certificate is a supplier-issued document that records the test results, acceptance criteria, and certifying laboratory details for a specific batch of material, used in SAP quality management to support goods receipt inspection.
 
 Model used: gemini-2.5-flash-preview-05-20
 Setup verified successfully.

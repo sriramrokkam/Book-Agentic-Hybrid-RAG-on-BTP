@@ -28,7 +28,7 @@ The two pipelines are genuinely independent operations. The vector pipeline call
 | HANA operation | Many `INSERT` statements | One `SPARQL_EXECUTE` insert |
 | Failure mode | Can fail on any chunk | Atomic — succeeds or fails entirely |
 
-On a 30-page MSDS document the difference is measurable. Embedding 60 chunks against the Vertex AI API takes roughly 8–12 seconds. Calling Gemini 2.5 Flash for triple extraction from the same document takes 3–6 seconds. Sequential: 14–18 seconds. Parallel: 8–12 seconds (the slower pipeline dominates). The improvement compounds across every document uploaded across the platform.
+On a 30-page batch quality certificate or MSDS document the difference is measurable. Embedding 60 chunks against the Vertex AI API takes roughly 8–12 seconds. Calling Gemini 2.5 Flash for triple extraction from the same document takes 3–6 seconds. Sequential: 14–18 seconds. Parallel: 8–12 seconds (the slower pipeline dominates). The improvement compounds across every document uploaded across the platform.
 
 `ThreadPoolExecutor(max_workers=2)` is the implementation mechanism. It creates exactly two OS threads within the FastAPI process — one for each pipeline. This is true parallelism: the embedding API calls in Thread 1 and the Gemini call in Thread 2 execute concurrently, sharing nothing except the temp file path.
 
@@ -68,7 +68,7 @@ def extract_text(pdf_path: str) -> str:
     return text
 ```
 
-`page.get_text()` with no arguments returns the page's text content in reading order, with word-level coordinates used internally to reconstruct flow. For most MSDS documents this produces clean, paragraph-structured text. For scanned PDFs (no text layer) it returns an empty string — handled below.
+`page.get_text()` with no arguments returns the page's text content in reading order, with word-level coordinates used internally to reconstruct flow. For most material documents this produces clean, paragraph-structured text. For scanned PDFs (no text layer) it returns an empty string — handled below.
 
 ### 5.2.1 Extracting with metadata
 
@@ -102,7 +102,7 @@ def extract_pdf_text(path: str) -> tuple[str, int]:
 
 The `ValueError` is important. If a scanned PDF arrives and we silently extract an empty string, the vector pipeline produces zero embeddings and the KG pipeline sends an empty prompt to Gemini. Both pipelines appear to succeed, but the document is never searchable. Raising early surfaces the problem immediately and sets both status columns to `ERROR` with a meaningful message — visible to operators without reading log files.
 
-> **Warning:** PyMuPDF's `get_text()` preserves hyphenation artifacts from PDF layout. Words broken across lines (e.g., "flamma-" + newline + "ble") will appear as a hyphenated pair in the extracted string. For MSDS documents this rarely causes problems because the affected words are typically in multi-column safety tables, but if your documents have heavy hyphenation, consider a post-processing step: `text = re.sub(r'-\n', '', text)`.
+> **Warning:** PyMuPDF's `get_text()` preserves hyphenation artifacts from PDF layout. Words broken across lines (e.g., "flamma-" + newline + "ble") will appear as a hyphenated pair in the extracted string. For material documents this rarely causes problems because the affected words are typically in multi-column document tables, but if your documents have heavy hyphenation, consider a post-processing step: `text = re.sub(r'-\n', '', text)`.
 
 ### 5.2.2 Handling upload files in FastAPI
 
@@ -127,7 +127,7 @@ Using `delete=False` gives us a path we can pass to background threads. We delet
 
 ## 5.3 Chunking strategy for vector search
 
-The vector pipeline does not process the full document text as a single unit. A 30-page MSDS document contains 8,000–12,000 words. Embedding that as one unit would produce a single 768-dimensional vector that averages the meaning of everything — hazard codes, first-aid steps, disposal procedures, regulatory text — into an undifferentiated blob. Cosine similarity against that vector would return the document for almost any question, because the document contains something relevant to almost any safety question. Precision would be zero.
+The vector pipeline does not process the full document text as a single unit. A 30-page material document contains 8,000–12,000 words. Embedding that as one unit would produce a single 768-dimensional vector that averages the meaning of everything — test results, storage requirements, delivery conditions, specification tables — into an undifferentiated blob. Cosine similarity against that vector would return the document for almost any question. Precision would be zero.
 
 The answer is chunking: splitting the document into smaller, semantically coherent pieces and embedding each independently. The cosine search then retrieves the specific chunks most relevant to a question, not the whole document.
 
@@ -144,10 +144,10 @@ We use three parameters:
 The `text-embedding-004` model from Vertex AI accepts up to 3,072 tokens per input. Our 500-token chunks are well within that limit, which gives us room to include a prefix that grounds the embedding with document metadata:
 
 ```
-Material: Acetone (MAT-001)\n\n<chunk text>
+Material: BATCH-QC-MAT-001\n\n<chunk text>
 ```
 
-Adding the material name to every chunk significantly improves retrieval accuracy for multi-document queries. Without it, a chunk about "flammable liquid" could match any of dozens of materials.
+Adding the material name to every chunk significantly improves retrieval accuracy for multi-document queries. Without it, a chunk about "tensile test" could match any of dozens of batch certificates.
 
 This prefix approach is also what makes the vector pipeline document-type agnostic. The same chunker, with the same parameters, handles an MSDS equally well as a purchase order or a quality inspection certificate — the material prefix ensures retrieved chunks are always scoped to the correct document.
 
@@ -195,17 +195,17 @@ def chunk_text(
         yield prefix + " ".join(current_chunk)
 ```
 
-> **Tip:** This chunker uses a word-count approximation for token count (`1 token ≈ 0.75 words`). For production use, replace the approximation with the `tiktoken` library: `len(tiktoken.encoding_for_model("text-embedding-ada-002").encode(text))`. The approximation is accurate enough for MSDS documents, where prose density is fairly uniform.
+> **Tip:** This chunker uses a word-count approximation for token count (`1 token ≈ 0.75 words`). For production use, replace the approximation with the `tiktoken` library: `len(tiktoken.encoding_for_model("text-embedding-ada-002").encode(text))`. The approximation is accurate enough for material documents, where prose density is fairly uniform.
 
 ### 5.3.3 Why the KG pipeline does not chunk
 
 The Knowledge Graph pipeline receives the **full document text**, not chunks. This is a deliberate asymmetry.
 
-Gemini's triple extraction works best when it can see the entire document context. A hazard code (H225) might appear in Section 2 of an MSDS. The material name appears in Section 1. The supplier appears in Section 13. If we feed Gemini a chunk that contains only Section 2, it cannot associate H225 with the material and supplier, because those context clues are in different sections.
+Gemini's triple extraction works best when it can see the entire document context. A certificate number (QC-CERT-44781) might appear in the batch header section of a quality certificate. The material name appears in the header. The certifying laboratory appears in the test results section. If we feed Gemini a chunk that contains only the test results section, it cannot associate the certificate number with the material and certifying lab, because those context clues are in different sections.
 
 For the KG pipeline, the goal is to extract a small number of high-precision facts (typically 5–15 triples per document). Gemini 2.5 Flash can easily handle 10,000 words in a single prompt, so there is no technical reason to chunk. The full-document approach produces far better triple quality.
 
-The KG extraction prompt is the single configuration point that varies per document type. An MSDS prompt instructs Gemini to extract hazard codes, exposure limits, and precaution statements. An invoice prompt instructs it to extract vendor, line items, and payment terms. An inspection report prompt extracts test results, pass/fail verdicts, and inspector identity. The chunker code and the SPARQL insert code remain identical across all document types.
+The KG extraction prompt is the single configuration point that varies per document type. An invoice prompt instructs it to extract vendor, line items, and payment terms. A batch certificate prompt extracts test results, pass/fail verdicts, and certifying laboratory. A regulatory document prompt extracts hazard codes, exposure limits, and precaution statements. The chunker code and the SPARQL insert code remain identical across all document types.
 
 ---
 
@@ -525,7 +525,7 @@ Persisting error messages in the `KG_ERROR` and `VECTOR_ERROR` columns means ope
 
 ---
 
-## 5.8 Testing — upload five MSDS documents
+## 5.8 Testing — upload five material documents
 
 ### 5.8.1 Start the service
 
@@ -539,9 +539,9 @@ uvicorn main:app --reload --port 8000
 
 ```bash
 curl -s -X POST http://localhost:8000/process-upload \
-     -F "file=@/path/to/acetone-sds.pdf" \
+     -F "file=@/path/to/batch-cert-001.pdf" \
      -F "materialNumber=MAT-001" \
-     -F "materialName=Acetone"
+     -F "materialName=BATCH-QC-MAT-001"
 ```
 
 Expected response (within 200 ms):
@@ -617,10 +617,10 @@ for row in rows:
 Expected output:
 
 ```
-('http://msds.knowledge-graph.org/ontology#hasHazardCode',    'H225')
-('http://msds.knowledge-graph.org/ontology#hasHazardCode',    'H319')
-('http://msds.knowledge-graph.org/ontology#hasHazardCode',    'H336')
-('http://msds.knowledge-graph.org/ontology#hasExposureLimit', '500 ppm TWA')
+('http://msds.knowledge-graph.org/ontology#certifiedBy',      'ACME Steel AG')
+('http://msds.knowledge-graph.org/ontology#certificateNumber','QC-CERT-44781')
+('http://msds.knowledge-graph.org/ontology#testResult',       'ISO 6892-1 tensile test')
+('http://msds.knowledge-graph.org/ontology#certifyingLab',    'Bureau Veritas Testing GmbH')
 ('http://msds.knowledge-graph.org/ontology#requiresPrecaution', 'Keep away from open flames')
 ('http://msds.knowledge-graph.org/ontology#hasSupplier',      'Sigma-Aldrich')
 ```
@@ -655,7 +655,7 @@ Before moving to Chapter 6, confirm each of the following:
 - [ ] Five documents uploaded; all show `kgStatus = "DONE"` and `vectorStatus = "DONE"`.
 - [ ] `SELECT COUNT(*) FROM MSDS_VECTORS WHERE MATERIAL_NUMBER = 'MAT-001'` returns a positive number.
 - [ ] `SELECT CARDINALITY(EMBEDDING) FROM MSDS_VECTORS FETCH FIRST 1 ROWS ONLY` returns `768`.
-- [ ] SPARQL query against `MSDS_Graph/MAT-001` returns at least one triple with predicate `hasHazardCode`.
+- [ ] SPARQL query against `MSDS_Graph/BATCH-QC-MAT-001` returns at least one triple with predicate `certifiedBy`.
 - [ ] Re-uploading the same PDF overwrites existing rows rather than creating duplicates.
 - [ ] Uploading a scan-only PDF results in both statuses showing `ERROR`, not `PROCESSING`.
 

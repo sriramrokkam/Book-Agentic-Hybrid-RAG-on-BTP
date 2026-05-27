@@ -289,7 +289,7 @@ Every chunking decision sits on a spectrum between two failure modes:
 
 **Too large (over 600 tokens — a full page):** Retrieval becomes noisy. A page of a batch certificate that covers tensile strength, yield strength, and elongation simultaneously scores moderately for all three questions but tops the ranking for none of them. The chunk also contains irrelevant content that consumes LLM context window without contributing to the answer.
 
-**The sweet spot for SAP material documents is 400–500 tokens.** This range consistently captures one complete logical unit — one test result block, one invoice line item group, one maintenance procedure step, one MSDS section — without spilling into adjacent topics.
+**The sweet spot for SAP material documents is 400–500 tokens.** This range consistently captures one complete logical unit — one test result block, one invoice line item group, one maintenance procedure step, one delivery note block — without spilling into adjacent topics.
 
 ### Why 50-token overlap
 
@@ -307,7 +307,7 @@ The 500-token maximum is a ceiling, not a target. Each document type in this pla
 | **GR Inspection Report** | Per line item inspected | 200–350 tokens | Inspector observations and QM decision stay in the same chunk as the line item |
 | **Equipment Maintenance History** | Per maintenance order / service event | 300–500 tokens | Failure description and root cause must stay together — splitting them breaks the narrative |
 | **Supplier Invoice** | Header + per line item block | 100–250 tokens | Header (vendor, PO, payment terms) is one chunk; each line item is a separate chunk |
-| **MSDS** | Per OSHA section (1–16) | 150–400 tokens | Section headers are always present and map exactly to knowledge domains |
+| **MSDS / SDS** | Per regulatory section (1–16) | 150–400 tokens | Section headers defined by GHS/OSHA regulation — present in every compliant document |
 
 ### Our chunking parameters
 
@@ -582,7 +582,7 @@ In this chapter you built a working vector search system on HANA Cloud. The majo
 - **`REAL_VECTOR` is HANA's native vector column type.** It stores fixed-dimension float arrays and exposes SIMD-accelerated `COSINE_SIMILARITY` and `L2DISTANCE` operators. You do not need a separate vector database.
 - **Lazy table initialization keeps your schema in sync with your model.** Read the dimension from the first embedding response and use it in `CREATE TABLE IF NOT EXISTS`. Never hardcode the dimension in DDL.
 - **The cosine similarity query has five clauses, each load-bearing.** `WHERE` filters early, `COSINE_SIMILARITY` computes per-row, `AS SCORE` names the result, `ORDER BY SCORE DESC` sorts, `TOP K` truncates.
-- **Chunking adapts to document structure; the storage code does not.** MSDS documents use OSHA section boundaries. Invoices use line-item blocks. Batch certificates use test result sections. The same `MSDS_VECTORS` table and `search_similar` function serve all document types.
+- **Chunking adapts to document structure; the storage code does not.** Regulatory documents (MSDS/SDS) use GHS section boundaries. Invoices use line-item blocks. Batch certificates use test result sections. The same `MSDS_VECTORS` table and `search_similar` function serve all document types.
 - **The `MATERIAL_NUMBER` column is the anchor to SAP MM.** The CAP layer validates it against S/4HANA product master via API_PRODUCT_SRV before accepting uploads. Every vector in the table is traceable to a real, validated SAP material.
 - **Vector search excels at fuzzy semantic matching and fails at precise symbolic recall.** The exact identifier problem — certificate numbers, batch lot numbers, PO numbers — motivates the Knowledge Graph in Chapter 4.
 

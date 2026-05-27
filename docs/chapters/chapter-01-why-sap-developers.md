@@ -80,7 +80,7 @@ The platform is designed to handle any PDF document type that an SAP user would 
 - **Goods Receiving Inspection Reports** — QM-generated reports recording the outcome of incoming goods inspection, including usage decision and lot status
 - **Equipment Maintenance History** — service records linked to technical objects (equipment numbers) associated with materials in plant maintenance
 - **Supplier Invoices** — AP documents linking vendor, line items, purchase order references, and payment terms
-- **MSDS (Material Safety Data Sheets)** — standardised regulatory documents describing material properties, hazard classification, and handling requirements
+- **MSDS (Material Safety Data Sheets)** — regulatory documents present in chemical and pharma supply chains; used as one document type in the reference implementation
 
 MSDS is the document type used for the reference implementation. The HANA Cloud vector table is named `MSDS_VECTORS`. The HANA RDF named graph is `MSDS_Graph`. Test data, sample queries, and the ontology in Appendix B are all MSDS-based. This is a naming artifact from the reference implementation, not a constraint on the architecture. The ingestion pipeline, agent orchestration, and retrieval logic are document-type agnostic. Changing the Knowledge Graph extraction prompt — the instruction that tells Gemini 2.5 Flash what triples to extract — is all that is required to apply the same system to batch certificates, inspection reports, or maintenance records. The table naming is explained once, accepted throughout, and not revisited.
 
