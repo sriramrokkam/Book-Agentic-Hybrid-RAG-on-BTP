@@ -24,7 +24,7 @@ These three changes — dynamic ports, credential delivery via bindings, and HTT
 
 The system deploys as two independent CF applications: the FastAPI Python service and the CAP Node.js service. This is not an accident of how the code happens to be organised — it is a deliberate architectural choice with operational consequences.
 
-FastAPI handles AI orchestration and HANA data access. It is a standard Python web service that runs on any CF Python buildpack. Its responsibilities are: receiving document upload requests, running the LangGraph ingestion pipeline, querying HANA for vector and knowledge graph retrieval, calling Vertex AI for LLM inference, and returning answers. None of these responsibilities have any dependency on OData, Fiori, or BTP security services.
+FastAPI handles AI orchestration and HANA data access. It is a standard Python web service that runs on any CF Python buildpack. Its responsibilities are: receiving document upload requests, running the LangGraph ingestion pipeline, querying HANA for vector and Knowledge Graph retrieval, calling Vertex AI for LLM inference, and returning answers. None of these responsibilities have any dependency on OData, Fiori, or BTP security services.
 
 CAP handles OData protocol, Fiori UI rendering, S/4HANA product master integration via API_PRODUCT_SRV, and BTP service bindings for XSUAA authentication and HANA schema management. It is the SAP-native layer. Its responsibilities are: serving the Fiori Elements UI, validating OData requests, managing document and attachment records in HANA, and proxying processing and query requests to the FastAPI backend.
 
@@ -342,7 +342,7 @@ BTP encrypts the `gcp.service_account_key` value at rest. The service account JS
 
 ## 10.8 Step 5: Load the Ontology
 
-The HANA knowledge graph requires the MSDS ontology to be loaded before any queries can run against it. In local development this was done by calling the admin endpoint directly. In the deployed environment, the process is identical, but the URL is the deployed agent route rather than localhost.
+The HANA Knowledge Graph requires the MSDS ontology to be loaded before any queries can run against it. In local development this was done by calling the admin endpoint directly. In the deployed environment, the process is identical, but the URL is the deployed agent route rather than localhost.
 
 Obtain the agent route:
 
@@ -391,7 +391,7 @@ curl -X POST \
   -d '{"question": "What documents are available for material MAT-001?", "session_id": "smoke-test-01"}'
 ```
 
-This bypasses the CAP layer entirely and tests the LangGraph agent directly against HANA. The question validates the end-to-end flow: the agent queries both the knowledge graph and the vector store, calls Vertex AI for answer synthesis, and returns the result. You should receive a JSON response with an `answer` field and a `retrieval_path` field indicating which chains were invoked. If this succeeds, the HANA connection, the Vertex AI embedding model, and the LangGraph orchestration are all functional in the deployed environment.
+This bypasses the CAP layer entirely and tests the LangGraph agent directly against HANA. The question validates the end-to-end flow: the agent queries both the Knowledge Graph and the vector store, calls Vertex AI for answer synthesis, and returns the result. You should receive a JSON response with an `answer` field and a `retrieval_path` field indicating which chains were invoked. If this succeeds, the HANA connection, the Vertex AI embedding model, and the LangGraph orchestration are all functional in the deployed environment.
 
 ### CAP OData endpoint
 
@@ -487,13 +487,13 @@ For production deployments with SLA requirements, consider enabling autoscaling 
 
 ## 10.12 What You Have Built
 
-You have deployed a production-grade Material Document Intelligence Platform to SAP BTP Cloud Foundry. Any PDF document — MSDS, invoice, batch certificate, inspection report, maintenance manual, legal filing — can be uploaded against a SAP Material Number, processed into a vector store and knowledge graph, and queried in natural language. The system runs on SAP's enterprise cloud platform, uses SAP HANA Cloud for both AI storage layers, integrates with real S/4HANA product master data via API_PRODUCT_SRV, and presents a familiar Fiori Elements interface.
+You have deployed a production-grade Material Document Intelligence Platform to SAP BTP Cloud Foundry. Any PDF document — MSDS, invoice, batch certificate, inspection report, maintenance manual, legal filing — can be uploaded against a SAP Material Number, processed into a vector store and Knowledge Graph, and queried in natural language. The system runs on SAP's enterprise cloud platform, uses SAP HANA Cloud for both AI storage layers, integrates with real S/4HANA product master data via API_PRODUCT_SRV, and presents a familiar Fiori Elements interface.
 
-Two applications are running as Cloud Foundry containers. The Python FastAPI service — `hybrid-rag-agent` — runs a LangGraph agent that dispatches every incoming question to parallel retrieval chains: a SPARQL chain that queries the HANA RDF knowledge graph for structured facts, and a vector similarity chain that searches HANA's vector index for semantically relevant passages. The agent synthesises the results using a Gemini model on Google Vertex AI and returns a grounded answer with a traceable retrieval path.
+Two applications are running as Cloud Foundry containers. The Python FastAPI service — `hybrid-rag-agent` — runs a LangGraph agent that dispatches every incoming question to parallel retrieval chains: a SPARQL chain that queries the HANA RDF Knowledge Graph for structured facts, and a vector similarity chain that searches HANA's vector index for semantically relevant passages. The agent synthesises the results using a Gemini model on Google Vertex AI and returns a grounded answer with a traceable retrieval path.
 
 The CAP Node.js service — `msds-hybrid-rag-cap` — hosts an OData V4 API, a Fiori Elements UI, and an attachment handling layer. It validates material numbers against S/4HANA product master data, manages document records in HANA, and proxies processing and query requests to the FastAPI backend. Credentials for Vertex AI are stored in the BTP Destination Service — never in application code, never in deployment files.
 
-This is the foundation for an enterprise AI capability that can scale across your SAP landscape. The same platform, the same patterns, the same HANA instance that stores your vector embeddings and knowledge graph triples — extended to handle every document type your organisation processes against SAP materials.
+This is the foundation for an enterprise AI capability that can scale across your SAP landscape. The same platform, the same patterns, the same HANA instance that stores your vector embeddings and Knowledge Graph triples — extended to handle every document type your organisation processes against SAP materials.
 
 ---
 

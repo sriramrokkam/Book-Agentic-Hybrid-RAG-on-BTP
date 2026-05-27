@@ -107,7 +107,7 @@ This book is written for:
 - **Full-stack developers** who have experimented with LLMs and chatbots
   and are ready to go beyond simple Q&A into multi-step agentic systems
 - **BTP developers** who want hands-on experience with SAP HANA Cloud's
-  vector engine and SPARQL knowledge graph capabilities
+  vector engine and SPARQL Knowledge Graph capabilities
 
 If you work with SAP systems and want to build AI agents that reason over
 your enterprise data — this book is for you.
@@ -163,7 +163,7 @@ a working familiarity is enough.
 You do not need prior knowledge of:
 - Machine learning theory or mathematics
 - LangChain or LangGraph (we introduce it from scratch in Chapter 6)
-- RDF, SPARQL, or knowledge graphs (introduced from scratch in Chapter 4)
+- RDF, SPARQL, or Knowledge Graphs (introduced from scratch in Chapter 4)
 - SAP AI Core (covered optionally in Appendix E)
 - ABAP development
 - Docker or Kubernetes
@@ -207,7 +207,7 @@ book-agentic-hybrid-rag-on-btp/
 │   ├── srv/service.cds    #   Service definition and actions
 │   ├── srv/service.js     #   Action handlers (proxies to agent layer)
 │   └── .env.example
-├── MSDS_Ontology.ttl      # OWL ontology constraining knowledge graph
+├── MSDS_Ontology.ttl      # OWL ontology constraining Knowledge Graph
 ├── docs/                  # Book chapters and screenshots (this folder)
 │   ├── CODE_MAP.md        #   Chapter → source file cross-reference
 │   └── chapters/          #   All chapter markdown files

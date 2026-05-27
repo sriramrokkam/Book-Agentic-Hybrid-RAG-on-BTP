@@ -27,7 +27,7 @@ Our system has three infrastructure components:
 ![Platform Setup Overview](docs/screenshots/diagrams/02-platform-setup-overview.png)
 *Figure 2.2 — Your local machine develops and deploys to SAP BTP Trial. The BTP Cloud Foundry space runs the FastAPI agent and CAP Node.js service. HANA Cloud holds the REAL_VECTOR table and SPARQL/RDF graphs. The Destination Service stores GCP credentials. All Vertex AI calls go outbound over HTTPS only.*
 
-SAP HANA Cloud is the **knowledge layer** — it stores both our vector embeddings and our RDF knowledge graph in a single managed service. No other database on the market provides both REAL_VECTOR column types (for cosine similarity search) and a native SPARQL execution engine in one service. This is a significant architectural advantage — one connection, one credential, two retrieval strategies.
+SAP HANA Cloud is the **knowledge layer** — it stores both our vector embeddings and our RDF Knowledge Graph in a single managed service. No other database on the market provides both REAL_VECTOR column types (for cosine similarity search) and a native SPARQL execution engine in one service. This is a significant architectural advantage — one connection, one credential, two retrieval strategies.
 
 Google Vertex AI is the **AI inference layer** — it is an external HTTPS API that our BTP application calls like any other REST service. Gemini 2.5 Flash handles both our LLM tasks (SPARQL generation, answer synthesis) and we use `text-embedding-004` for generating embeddings. The BTP Destination Service stores the GCP credentials securely — the service account JSON key never lives in application code or environment variables directly.
 
@@ -691,7 +691,7 @@ We will build `vertex_srv.py` in Chapter 2. For now, knowing the pattern exists 
 
 ## 2.13 Summary
 
-- SAP BTP trial provides free Cloud Foundry runtime and HANA Cloud — the only database that combines vector search and SPARQL knowledge graph in one service
+- SAP BTP trial provides free Cloud Foundry runtime and HANA Cloud — the only database that combines vector search and SPARQL Knowledge Graph in one service
 - Google Vertex AI is an external HTTPS API — no GPU management, no model hosting, just an API call from BTP CF
 - The BTP Destination Service stores GCP credentials securely — never in code, never in `manifest.yml`
 - `text-embedding-004` produces 768-dimensional embeddings — this dimension is fixed and determines the HANA vector table schema

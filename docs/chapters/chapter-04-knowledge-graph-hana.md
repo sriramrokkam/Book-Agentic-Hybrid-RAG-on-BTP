@@ -2,7 +2,7 @@
 
 Vector search excels at finding relevant passages. It fails at extracting precise facts. When a procurement manager asks "Which supplier certified batch BATCH-2024-0871?", they need a name — "ACME Steel AG" — not a paragraph that mentions suppliers. When a quality engineer asks "Did this batch pass the tensile strength test?", they need "PASS" and the measured value, not a fuzzy match against test methodology paragraphs.
 
-RDF knowledge graphs store facts as precise triples that can be queried exactly. This is what HANA Cloud's SPARQL engine provides. Unlike the vector store, which searches by proximity in embedding space, the knowledge graph traverses explicit relationships. The query is not "find what is most similar to this question" — it is "traverse this graph and return the value at this exact node."
+RDF Knowledge Graphs store facts as precise triples that can be queried exactly. This is what HANA Cloud's SPARQL engine provides. Unlike the vector store, which searches by proximity in embedding space, the Knowledge Graph traverses explicit relationships. The query is not "find what is most similar to this question" — it is "traverse this graph and return the value at this exact node."
 
 The right answer to "What is the certificate number for batch BATCH-2024-0871?" is "QC-CERT-44781" — not a paragraph, not a summary, the exact identifier. The right answer to "Which lab certified this batch?" is "Bureau Veritas Testing GmbH" — a name, not a chunk of text.
 
@@ -12,9 +12,9 @@ If you have never written a line of RDF or SPARQL, do not worry. There are entir
 
 ---
 
-## 4.1 What is a knowledge graph?
+## 4.1 What is a Knowledge Graph?
 
-A **knowledge graph** is a collection of facts, where each fact is expressed as a relationship between two things. That is the entire idea. The vocabulary that the RDF community uses around it can sound ceremonial — "subject-predicate-object triples organized as a directed labeled multigraph" — but strip the ceremony away and you are left with three-word sentences.
+A **Knowledge Graph** is a collection of facts, where each fact is expressed as a relationship between two things. That is the entire idea. The vocabulary that the RDF community uses around it can sound ceremonial — "subject-predicate-object triples organized as a directed labeled multigraph" — but strip the ceremony away and you are left with three-word sentences.
 
 Consider the fact:
 
@@ -28,7 +28,7 @@ Three pieces:
 | Predicate | certified by |
 | Object | ACME Steel AG |
 
-This three-part fact is called a **triple**. A knowledge graph is a pile of triples. If we add more triples, the structure starts to feel like something an SAP developer already knows:
+This three-part fact is called a **triple**. A Knowledge Graph is a pile of triples. If we add more triples, the structure starts to feel like something an SAP developer already knows:
 
 ```
 BATCH-2024-0871   certifiedBy        ACME Steel AG
@@ -40,7 +40,7 @@ BATCH-2024-0871   certificationDate  2024-03-15
 QC-CERT-44781     description        "Certificate for batch BATCH-2024-0871, steel grade S355"
 ```
 
-Read those rows. You have just read a knowledge graph. Each row is a fact about this batch. The same subject (BATCH-2024-0871) can appear in many rows, just like a batch number can appear many times in QM-related tables. The same predicate (certifiedBy) can be reused for any other batch.
+Read those rows. You have just read a Knowledge Graph. Each row is a fact about this batch. The same subject (BATCH-2024-0871) can appear in many rows, just like a batch number can appear many times in QM-related tables. The same predicate (certifiedBy) can be reused for any other batch.
 
 > **Note:** If you are mentally translating this to a relational table with three columns — `subject`, `predicate`, `object` — you are not wrong. That is exactly how RDF can be persisted internally. The difference from a normal table is *what kinds of questions you can ask of it*, which we will get to with SPARQL.
 
@@ -49,7 +49,7 @@ Read those rows. You have just read a knowledge graph. Each row is a fact about 
 Because if you draw it, it looks like one. Subjects and objects are nodes; predicates are edges. The same certifying lab "Bureau Veritas Testing GmbH" might be the object of many batches' `certifiedBy` edges. The same certificate number might appear in many audit queries. The graph emerges naturally from shared values.
 
 ![Knowledge Graph Node: Acetone](docs/screenshots/diagrams/01-kg-acetone-node.png)
-*Figure: RDF knowledge graph representation of a Batch Quality Certificate — four triples extracted from a single document, stored as a named graph in SAP HANA Cloud*
+*Figure: RDF Knowledge Graph representation of a Batch Quality Certificate — four triples extracted from a single document, stored as a named graph in SAP HANA Cloud*
 
 ### What does this give us that a relational schema does not?
 
@@ -137,7 +137,7 @@ Because HANA already has secure, audited, governed connectivity through its SQL 
 
 ## 4.4 Designing the MSDS ontology — what facts matter?
 
-Before writing any code we must decide what kinds of facts we care about. This decision is called **ontology design**, and it is the most important step of building a knowledge graph. The ontology becomes a constraint on what Gemini is allowed to extract — without it, the model invents predicates like `containsAt`, `madeOf`, `relatedTo`, and the graph turns into noise.
+Before writing any code we must decide what kinds of facts we care about. This decision is called **ontology design**, and it is the most important step of building a Knowledge Graph. The ontology becomes a constraint on what Gemini is allowed to extract — without it, the model invents predicates like `containsAt`, `madeOf`, `relatedTo`, and the graph turns into noise.
 
 For a Batch Quality Certificate, the four predicates that matter for downstream queries are:
 
@@ -389,7 +389,7 @@ The data stayed in HANA throughout. Gemini generated a query string; HANA execut
 
 ---
 
-## 4.9 Building `kg_srv.py` — the knowledge graph service layer
+## 4.9 Building `kg_srv.py` — the Knowledge Graph service layer
 
 We collect everything into a single service module at `agents/srv/kg_srv.py`. It exposes five functions: `extract_triples`, `store_triples`, `query_graph`, `delete_graph`, `count_triples`. Create the file and paste this:
 
@@ -750,13 +750,13 @@ This is the contract:
 
 Neither one wins on its own. A user asking *"what does the certificate say about the test methodology used for tensile measurement?"* needs the prose chunk that paints the full picture. A user asking *"what is the certificate number?"* needs the identifier verbatim. The whole point of the next chapter — building the LangGraph supervisor — is to choose between them, or run both and merge the answers.
 
-> **Tip:** A useful intuition: the vector store remembers *what was said*. The knowledge graph remembers *what is true*. The first is great for context, the second is great for facts. Most non-trivial enterprise document questions need both.
+> **Tip:** A useful intuition: the vector store remembers *what was said*. The Knowledge Graph remembers *what is true*. The first is great for context, the second is great for facts. Most non-trivial enterprise document questions need both.
 
 ---
 
 ## 4.12 Summary
 
-You now have a working knowledge graph layer on HANA Cloud. Specifically:
+You now have a working Knowledge Graph layer on HANA Cloud. Specifically:
 
 - An ontology (`MSDS_Ontology.ttl`) that defines four predicates (`certifiedBy`, `testResult`, `certificateNumber`, `certifyingLab`) and acts as a contract for what facts the system understands. The namespace `http://msds.knowledge-graph.org/` reflects the MSDS reference implementation; production deployments use an organisation-specific namespace.
 - A `kg_srv.py` service module exposing `extract_triples`, `store_triples`, `query_graph`, `count_triples`, and `delete_graph`.

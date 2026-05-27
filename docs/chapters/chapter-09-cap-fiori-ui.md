@@ -43,7 +43,7 @@ CAP Node.js  (port 4004)
     v
 Python FastAPI  (port 8000)
     |
-    |-- HANA Cloud (vector store, knowledge graph)
+    |-- HANA Cloud (vector store, Knowledge Graph)
     |-- Google Vertex AI (Gemini LLM + text-embedding)
     |-- LangGraph (agent orchestration)
 ```
@@ -60,7 +60,7 @@ This separation has three practical benefits. First, you can develop and test ea
 
 The data model lives in `db/schema.cds`. It defines two entities and a status type.
 
-The namespace `msds.kg` reflects the first document type in our implementation — Material Safety Data Sheets, processed into a knowledge graph. In a production deployment serving multiple document categories (invoices, batch certificates, quality inspection reports, maintenance manuals, legal filings), you would use a broader namespace — `documents.kg` or `materials.intelligence` — and extend the schema with a `documentType` field. The core entity structure is identical regardless: `materialNumber` as the anchor, `attachments` as the document store, status tracking fields for both pipeline stages.
+The namespace `msds.kg` reflects the first document type in our implementation — Material Safety Data Sheets, processed into a Knowledge Graph. In a production deployment serving multiple document categories (invoices, batch certificates, quality inspection reports, maintenance manuals, legal filings), you would use a broader namespace — `documents.kg` or `materials.intelligence` — and extend the schema with a `documentType` field. The core entity structure is identical regardless: `materialNumber` as the anchor, `attachments` as the document store, status tracking fields for both pipeline stages.
 
 ```cds
 namespace msds.kg;
@@ -96,7 +96,7 @@ The `Status` type is declared as a CDS enum. This matters because enums generate
 
 The `Files` entity extends `managed`, which is a built-in CDS aspect from `@sap/cds/common`. This single word gives you four fields for free: `createdAt`, `createdBy`, `modifiedAt`, and `modifiedBy`. The framework populates them automatically on every insert and update. You never need to write that logic yourself.
 
-The dual-status design — `status` for the knowledge graph pipeline and `vectorStatus` for the vector pipeline — reflects a real operational requirement. The two pipelines run independently. A document can have its triples extracted successfully while the vector embedding is still running, or vice versa. Tracking them separately means your UI can show accurate, granular progress rather than a single boolean that masks which step failed.
+The dual-status design — `status` for the Knowledge Graph pipeline and `vectorStatus` for the vector pipeline — reflects a real operational requirement. The two pipelines run independently. A document can have its triples extracted successfully while the vector embedding is still running, or vice versa. Tracking them separately means your UI can show accurate, granular progress rather than a single boolean that masks which step failed.
 
 `fileHash` carries the `@assert.unique` annotation. This is a CAP-level constraint that generates a database unique index and returns a meaningful OData error if you attempt to upload the same file twice. Without this, operators could accidentally trigger redundant processing.
 
@@ -159,7 +159,7 @@ The `DocumentService` extends beyond the `Files` entity. The service also expose
 
 This is architecturally significant. The `materialNumber` field on the `Documents` entity carries a `@Common.ValueList` annotation that points to the `Products` entity. When a business user opens the Fiori UI to upload a new document and clicks into the Material Number field, the Fiori value help fires an OData request to `DocumentService/Products`. CAP proxies that request to the configured S/4HANA system and returns the matching product master records.
 
-What this means operationally: a quality manager uploading a batch certificate does not type a material number from memory — they search and select from their actual SAP product master. The material number that anchors the document in the knowledge graph and vector store is the same material number that exists in their S/4HANA system. When a question comes back through chatQuery — "What are the storage conditions for this material?" — the answer is grounded in data that is tied to the real product record.
+What this means operationally: a quality manager uploading a batch certificate does not type a material number from memory — they search and select from their actual SAP product master. The material number that anchors the document in the Knowledge Graph and vector store is the same material number that exists in their S/4HANA system. When a question comes back through chatQuery — "What are the storage conditions for this material?" — the answer is grounded in data that is tied to the real product record.
 
 This is what makes this a genuine enterprise integration rather than a standalone demo. The AI capability on BTP is connected to the system of record in S/4HANA through standard SAP OData APIs and standard BTP Destination Service connectivity. Changing the S/4HANA destination in the BTP Cockpit is the only configuration needed to point this system at a different S/4HANA landscape.
 
@@ -250,7 +250,7 @@ The handler updates the record status to `Processing` immediately after submitti
 
 ### chatQuery
 
-The `chatQuery` action is the core business value of this entire system. A quality manager, safety officer, or procurement analyst opens the document object page, types a natural language question — "What is the recommended storage temperature for this material?" or "Are there any regulatory restrictions on transport by air?" — and gets a sourced answer directly in the Fiori UI. The retrieval path shown alongside the answer tells them whether it came from the structured knowledge graph, the vector store, or both. No custom search interface. No manual document reading. No specialist tool to learn.
+The `chatQuery` action is the core business value of this entire system. A quality manager, safety officer, or procurement analyst opens the document object page, types a natural language question — "What is the recommended storage temperature for this material?" or "Are there any regulatory restrictions on transport by air?" — and gets a sourced answer directly in the Fiori UI. The retrieval path shown alongside the answer tells them whether it came from the structured Knowledge Graph, the vector store, or both. No custom search interface. No manual document reading. No specialist tool to learn.
 
 ```javascript
 srv.on("chatQuery", async (req) => {
@@ -275,11 +275,11 @@ srv.on("chatQuery", async (req) => {
 
 The `chat_history: []` field sends an empty history on every call. This makes every `chatQuery` invocation stateless from the agent's perspective. For a document Q&A system where questions are typically independent lookups, stateless queries are correct. If you were building a multi-turn conversational interface, you would maintain a conversation ID in the client and accumulate history on the server side. That is a separate concern — `chatQuery` can be extended to accept a `sessionId` parameter without changing anything in the action definition or the backend API contract.
 
-The `path_used` return value is an array of strings that the Python agent populates with the retrieval path it took: `["kg_chain"]`, `["vector_chain"]`, or `["kg_chain", "vector_chain"]`. Surfacing this in the UI gives users transparency into the agent's reasoning — they can see whether the answer came from the knowledge graph, the vector store, or both.
+The `path_used` return value is an array of strings that the Python agent populates with the retrieval path it took: `["kg_chain"]`, `["vector_chain"]`, or `["kg_chain", "vector_chain"]`. Surfacing this in the UI gives users transparency into the agent's reasoning — they can see whether the answer came from the Knowledge Graph, the vector store, or both.
 
 ### deleteFile
 
-The `deleteFile` handler triggers a cascading cleanup: remove the knowledge graph triples from HANA, remove the vector embeddings from HANA, then delete the CAP record and its attachments.
+The `deleteFile` handler triggers a cascading cleanup: remove the Knowledge Graph triples from HANA, remove the vector embeddings from HANA, then delete the CAP record and its attachments.
 
 ```javascript
 srv.on("deleteFile", Documents, async (req) => {

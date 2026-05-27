@@ -2,9 +2,9 @@
 
 SAP HANA Cloud is the only enterprise database that provides both REAL_VECTOR cosine similarity search and native SPARQL execution in a single managed service on BTP. This chapter shows how to use both simultaneously.
 
-In Chapter 6 we built a LangGraph agent with a stub retriever — a placeholder that returned a fixed string instead of real data. In Chapters 3 and 4 we built the real retrieval systems: a vector store in SAP HANA Cloud and a knowledge graph queried via SPARQL. In Chapter 5 we built the ingestion pipeline that populates both. All the pieces exist. This chapter assembles them.
+In Chapter 6 we built a LangGraph agent with a stub retriever — a placeholder that returned a fixed string instead of real data. In Chapters 3 and 4 we built the real retrieval systems: a vector store in SAP HANA Cloud and a Knowledge Graph queried via SPARQL. In Chapter 5 we built the ingestion pipeline that populates both. All the pieces exist. This chapter assembles them.
 
-The central design question is: when a user asks a question, do we run vector search first and knowledge graph search second? Or do we ask the LLM to decide which one to use? The answer to both is no. We run them in parallel, always, regardless of the question. This chapter explains why that decision is correct and shows you exactly how to implement it.
+The central design question is: when a user asks a question, do we run vector search first and Knowledge Graph search second? Or do we ask the LLM to decide which one to use? The answer to both is no. We run them in parallel, always, regardless of the question. This chapter explains why that decision is correct and shows you exactly how to implement it.
 
 By the end of this chapter you will have a working hybrid RAG system: a FastAPI service that receives a natural language question about any PDF document linked to an SAP Material Number, dispatches it simultaneously to both retrieval chains, merges the results, and returns an answer that demonstrably outperforms either strategy alone.
 
@@ -273,7 +273,7 @@ def run_kg_chain(state: HybridRAGState) -> dict:
         facts = [str(row) for row in rows]
         facts_text = "\n".join(facts[:50])  # limit to 50 facts
 
-        summarise_prompt = f"""You are an expert assistant for SAP material documents — answer questions based only on the provided document context. The following facts were retrieved from a structured knowledge graph about material {material_number}.
+        summarise_prompt = f"""You are an expert assistant for SAP material documents — answer questions based only on the provided document context. The following facts were retrieved from a structured Knowledge Graph about material {material_number}.
 Use them to answer the question precisely.
 
 Facts:
@@ -300,7 +300,7 @@ Answer:"""
         }
 ```
 
-The KG chain has one critical feature beyond basic SPARQL execution: the retry-on-empty loop. When Gemini generates a SPARQL query that returns no rows — which happens when the generated query is overly specific — the chain retries with a simpler fallback query that retrieves all triples for the material. This ensures we always get *something* from the knowledge graph if data exists.
+The KG chain has one critical feature beyond basic SPARQL execution: the retry-on-empty loop. When Gemini generates a SPARQL query that returns no rows — which happens when the generated query is overly specific — the chain retries with a simpler fallback query that retrieves all triples for the material. This ensures we always get *something* from the Knowledge Graph if data exists.
 
 > **Warning:** Never share HANA connections across threads. The `get_connection()` call in both chains uses `threading.local()` under the hood — each thread gets its own connection. If you pass a connection object between threads, HANA will raise concurrency errors. See `agents/srv/hdb_srv.py` for the thread-local implementation.
 
@@ -479,7 +479,7 @@ The orchestrator submits both chains to a `ThreadPoolExecutor` with `max_workers
 
 > **Note:** We use `as_completed()` rather than `executor.map()` because we want to process results as soon as they arrive, not wait for all to finish. If the vector chain finishes in 1.5 seconds and the KG chain takes 3 seconds, the orchestrator captures the vector result at 1.5 seconds and the KG result at 3 seconds, then merges at ~3 seconds total.
 
-The `sources` field populated at the end is the auditability record. The CAP Fiori UI surfaces this to the user — showing whether the answer was grounded in structured knowledge graph facts, in retrieved document passages, or in both. An enterprise user reviewing an AI-generated answer needs to know where it came from.
+The `sources` field populated at the end is the auditability record. The CAP Fiori UI surfaces this to the user — showing whether the answer was grounded in structured Knowledge Graph facts, in retrieved document passages, or in both. An enterprise user reviewing an AI-generated answer needs to know where it came from.
 
 ---
 

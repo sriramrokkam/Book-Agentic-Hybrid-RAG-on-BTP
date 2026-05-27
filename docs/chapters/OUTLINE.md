@@ -107,7 +107,7 @@ Every chapter builds on a single real-world use case:
 ### Chapter 5: Knowledge Graphs on SAP HANA Cloud
 **Key question:** How do I model and query structured facts as a graph?
 
-- What is a knowledge graph? Triples, nodes, edges — intuition first
+- What is a Knowledge Graph? Triples, nodes, edges — intuition first
 - RDF and SPARQL — the standards explained plainly
 - Why HANA Cloud supports SPARQL (SPARQL_EXECUTE stored procedure)
 - Designing the MSDS ontology — what facts matter?
@@ -117,16 +117,16 @@ Every chapter builds on a single real-world use case:
 - Extracting triples from text using Gemini (ontology-constrained prompting)
 - Storing triples in HANA: named graphs per document
 - Writing SPARQL queries — from natural language to graph traversal
-- Building `kg_srv.py` — the knowledge graph service layer
+- Building `kg_srv.py` — the Knowledge Graph service layer
 - Testing: upload one MSDS, query for GHS codes via SPARQL
 - What the KG gets right that vector search cannot
 
-**What reader can do after this chapter:** Build a working knowledge graph on HANA Cloud, extract structured facts from documents, query via SPARQL.
+**What reader can do after this chapter:** Build a working Knowledge Graph on HANA Cloud, extract structured facts from documents, query via SPARQL.
 
 ---
 
 ### Chapter 6: The PDF Ingestion Pipeline
-**Key question:** How do I process a document into both a vector store and a knowledge graph simultaneously?
+**Key question:** How do I process a document into both a vector store and a Knowledge Graph simultaneously?
 
 - The dual-pipeline architecture — why process both in parallel
 - PDF text extraction with PyMuPDF

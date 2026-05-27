@@ -16,7 +16,7 @@ On SAP BTP, three structural problems emerge when a single agent handles multi-d
 
 **Problem 1: Context dilution.** A single retrieval pass retrieves the top-5 chunks by cosine similarity. For a multi-domain question, those 5 chunks scatter across domains: perhaps 2 about batch test results, 2 about supplier data, 1 about storage conditions. Each domain gets two chunks of context at best. For a quality engineer who needs a complete picture of batch certification status, two chunks is not enough — the certificate number, the test values, the certifying lab, and the approval date may all live in different chunks that were not top-ranked.
 
-**Problem 2: Mismatched retrieval strategy per domain.** Different knowledge types require different retrieval strategies. A question about a specific certificate number (structured identifier) belongs in the knowledge graph — it is a triple, not a chunk. A question about how the supplier described their test methodology (narrative prose) belongs in the vector store. A question about supplier qualification status might need both. A single-agent system applies one strategy uniformly; a specialist agent applies the right strategy for its domain.
+**Problem 2: Mismatched retrieval strategy per domain.** Different knowledge types require different retrieval strategies. A question about a specific certificate number (structured identifier) belongs in the Knowledge Graph — it is a triple, not a chunk. A question about how the supplier described their test methodology (narrative prose) belongs in the vector store. A question about supplier qualification status might need both. A single-agent system applies one strategy uniformly; a specialist agent applies the right strategy for its domain.
 
 **Problem 3: Prompt dilution under S/4HANA integration.** When the agent also has access to live S/4HANA data via API_PRODUCT_SRV (product master, quality holds, vendor data), the LLM receives a prompt containing SAP API results, KG triples, and vector chunks simultaneously. A generalist agent must reason across all of them at once. A specialist agent reasons only within its domain and hands a focused result to the supervisor for synthesis.
 
@@ -121,8 +121,8 @@ SUPERVISOR_PROMPT = """You are a routing agent for a material document intellige
 Your job is to analyse a user's question and route it to the right specialist agents.
 
 Each specialist uses a different retrieval strategy — route to the specialist whose strategy best matches the question type:
-- "hazard": answers questions about structured facts — GHS hazard codes, hazard classifications, signal words, hazard statements. Uses the knowledge graph.
-- "compliance": answers questions about regulatory requirements — exposure limits, permissible concentrations, OSHA/ACGIH thresholds, legal obligations. Uses both knowledge graph and document search.
+- "hazard": answers questions about structured facts — GHS hazard codes, hazard classifications, signal words, hazard statements. Uses the Knowledge Graph.
+- "compliance": answers questions about regulatory requirements — exposure limits, permissible concentrations, OSHA/ACGIH thresholds, legal obligations. Uses both Knowledge Graph and document search.
 - "safety": answers questions about narrative procedures — first aid, PPE requirements, storage instructions, handling precautions, spill response. Uses document search.
 
 For each specialist you select, write a focused sub-question that extracts only the relevant part of the user's question.
@@ -213,7 +213,7 @@ def _make_chain_state(sub_question: str, state: SupervisorState) -> HybridRAGSta
 
 def hazard_agent(state: SupervisorState) -> dict:
     """KG-focused: GHS codes, classifications, hazard statements.
-    Structured hazard data lives in the knowledge graph as precise triples."""
+    Structured hazard data lives in the Knowledge Graph as precise triples."""
     sub_q = state["sub_questions"].get("hazard", state["question"])
     chain_state = _make_chain_state(sub_q, state)
     result = run_kg_chain(chain_state)

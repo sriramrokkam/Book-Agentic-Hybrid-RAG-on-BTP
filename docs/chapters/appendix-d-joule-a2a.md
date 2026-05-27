@@ -12,7 +12,7 @@
 
 Throughout this book we have built the intelligence layer: a Python FastAPI service that orchestrates a LangGraph hybrid RAG agent, stores knowledge in SAP HANA Cloud, and returns accurate answers about Material Safety Data Sheets. In Chapter 9 we gave that agent a Fiori Elements front-end. This appendix adds a third access channel: SAP Joule, the AI assistant embedded directly in S/4HANA and SuccessFactors.
 
-The value is significant. A procurement specialist in S/4HANA who is looking at a purchase order for Acetone can ask Joule "what are the PPE requirements for this material?" without leaving their context. Joule routes that question to our hybrid RAG agent, which queries the knowledge graph and vector store, and returns the answer inside the Joule chat panel. The user never opens a separate application.
+The value is significant. A procurement specialist in S/4HANA who is looking at a purchase order for Acetone can ask Joule "what are the PPE requirements for this material?" without leaving their context. Joule routes that question to our hybrid RAG agent, which queries the Knowledge Graph and vector store, and returns the answer inside the Joule chat panel. The user never opens a separate application.
 
 That routing is handled by the A2A protocol. This appendix explains how it works, walks through every YAML file in the `joule/` directory of the project, and shows you how to package and deploy the capability.
 
@@ -266,7 +266,7 @@ capability_context:
 ```yaml
 description: >-
   Check the processing status of an MSDS material document including ingestion progress,
-  number of knowledge graph triples extracted, number of vectors stored,
+  number of Knowledge Graph triples extracted, number of vectors stored,
   and whether document processing is complete or still in progress.
 target:
   type: function
@@ -359,7 +359,7 @@ The response uses the flat format in both cases, since Joule 1.x is the primary 
 
 Joule imposes a hard 15-second timeout on A2A requests, as declared in the function YAML (`timeout: 15`). Any response that arrives after 15 seconds is silently discarded. The user sees nothing, which is a poor experience.
 
-The hybrid RAG agent in Chapter 7 runs the knowledge graph chain and the vector chain in parallel using `asyncio.gather`. On a cold start — first request after the service has been idle — this typically takes 4 to 6 seconds including the Gemini LLM call. On a warm service it runs in 2 to 4 seconds. This is comfortably within 15 seconds under normal conditions.
+The hybrid RAG agent in Chapter 7 runs the Knowledge Graph chain and the vector chain in parallel using `asyncio.gather`. On a cold start — first request after the service has been idle — this typically takes 4 to 6 seconds including the Gemini LLM call. On a warm service it runs in 2 to 4 seconds. This is comfortably within 15 seconds under normal conditions.
 
 The cases that can exceed 15 seconds are:
 
@@ -370,14 +370,14 @@ The cases that can exceed 15 seconds are:
 Defensive patterns to stay within the timeout:
 
 - Set an explicit timeout on the LLM call (`request_options={"timeout": 10}` for Vertex AI clients) so the agent fails fast rather than waiting indefinitely
-- Limit SPARQL query depth to two hops maximum in the knowledge graph chain
+- Limit SPARQL query depth to two hops maximum in the Knowledge Graph chain
 - Cap the number of vector chunks returned to 5 before sending to the LLM
 
 The `/a2a` endpoint should also wrap its internal call in a Python `asyncio.wait_for` with a 12-second limit, which gives Joule a 3-second margin to receive and process the response before its own timeout fires.
 
 ### D.6.3 The Status Path
 
-When the `Message` field is the literal string `"status"`, the endpoint checks the ingestion status of the material identified by `taskId`. It queries HANA for the triple count in the knowledge graph and the vector count in the vector store, and returns a natural-language summary:
+When the `Message` field is the literal string `"status"`, the endpoint checks the ingestion status of the material identified by `taskId`. It queries HANA for the triple count in the Knowledge Graph and the vector count in the vector store, and returns a natural-language summary:
 
 ```
 Material 200001001: processing complete.
@@ -505,11 +505,11 @@ Joule:   [Searching MSDS knowledge base...]
          The flash point is -20 degrees Celsius. The substance is not
          classified as carcinogenic or reproductively toxic under REACH.
 
-         Source: hybrid RAG — knowledge graph (GHS classification, UN number)
+         Source: hybrid RAG — Knowledge Graph (GHS classification, UN number)
          + vector search (handling instructions).
 ```
 
-Joule matched the question to the `msds_query` scenario because the description includes "hazard information" and "GHS classification." The `material_number` capability context was empty on this first turn, so the agent resolved the material by name from the knowledge graph.
+Joule matched the question to the `msds_query` scenario because the description includes "hazard information" and "GHS classification." The `material_number` capability context was empty on this first turn, so the agent resolved the material by name from the Knowledge Graph.
 
 **Follow-up — context preserved:**
 
@@ -525,7 +525,7 @@ Joule:   [Searching MSDS knowledge base...]
          TWA of 500 ppm.
 ```
 
-The user did not mention Acetone in the second question. Joule passed the `material_number` from `$capability_context.material_number` to the function, which sent it as `taskId` in the `/a2a` request. The agent used it to scope the knowledge graph SPARQL query to Acetone's document.
+The user did not mention Acetone in the second question. Joule passed the `material_number` from `$capability_context.material_number` to the function, which sent it as `taskId` in the `/a2a` request. The agent used it to scope the Knowledge Graph SPARQL query to Acetone's document.
 
 **Checking processing status:**
 

@@ -1,8 +1,8 @@
 # Chapter 5: The Document Intelligence Ingestion Pipeline
 
-In Chapter 4 you built two storage systems on SAP HANA Cloud: a vector table that answers fuzzy semantic questions and a knowledge graph that answers precise factual ones. Both are powerful in isolation. The missing piece is the plumbing — the code that takes any PDF file uploaded against an SAP Material Number and feeds both systems at the same time, cleanly, without one pipeline blocking the other, and without leaving the user waiting at a spinning upload button.
+In Chapter 4 you built two storage systems on SAP HANA Cloud: a vector table that answers fuzzy semantic questions and a Knowledge Graph that answers precise factual ones. Both are powerful in isolation. The missing piece is the plumbing — the code that takes any PDF file uploaded against an SAP Material Number and feeds both systems at the same time, cleanly, without one pipeline blocking the other, and without leaving the user waiting at a spinning upload button.
 
-That is what this chapter builds. By the end of it you will have `agents/srv/doc_srv.py`, a production-quality ingestion service that receives a PDF upload, immediately acknowledges the request, and runs two threads simultaneously — one chunking and embedding text into the vector store, the other extracting structured triples into the knowledge graph. The caller gets a response in milliseconds. The heavy lifting happens asynchronously.
+That is what this chapter builds. By the end of it you will have `agents/srv/doc_srv.py`, a production-quality ingestion service that receives a PDF upload, immediately acknowledges the request, and runs two threads simultaneously — one chunking and embedding text into the vector store, the other extracting structured triples into the Knowledge Graph. The caller gets a response in milliseconds. The heavy lifting happens asynchronously.
 
 The pipeline is document-type agnostic at the infrastructure level. Whether the uploaded file is an MSDS, a purchase order, a batch certificate, or a quality inspection report, the same dual-thread architecture applies. The vector pipeline always chunks, embeds, and stores to HANA REAL_VECTOR. The KG pipeline always calls Gemini and stores triples via SPARQL. The only thing that varies per document type is the Gemini prompt used for triple extraction — a single configuration point that determines what structured knowledge the pipeline extracts from that document class.
 
@@ -199,7 +199,7 @@ def chunk_text(
 
 ### 5.3.3 Why the KG pipeline does not chunk
 
-The knowledge graph pipeline receives the **full document text**, not chunks. This is a deliberate asymmetry.
+The Knowledge Graph pipeline receives the **full document text**, not chunks. This is a deliberate asymmetry.
 
 Gemini's triple extraction works best when it can see the entire document context. A hazard code (H225) might appear in Section 2 of an MSDS. The material name appears in Section 1. The supplier appears in Section 13. If we feed Gemini a chunk that contains only Section 2, it cannot associate H225 with the material and supplier, because those context clues are in different sections.
 
@@ -387,7 +387,7 @@ def _vector_pipeline(
 
 > **Tip:** For large document batches, consider batching the embedding calls. The `text-embedding-004` endpoint accepts up to 250 texts in a single request. Instead of 60 individual calls for 60 chunks, one batched call returns all 60 embeddings at once. The latency drops from ~10 seconds to ~1.5 seconds for the embed step. Batching is shown in Appendix C.
 
-### 5.5.4 Thread 2 — the knowledge graph pipeline
+### 5.5.4 Thread 2 — the Knowledge Graph pipeline
 
 ```python
 from agents.srv.kg_srv import extract_triples_from_text, insert_triples
@@ -584,7 +584,7 @@ ORDER BY CHUNK_INDEX;
 
 Expected: every row has `VECTOR_DIM = 768`.
 
-### 5.8.5 Verify the knowledge graph
+### 5.8.5 Verify the Knowledge Graph
 
 ```python
 from hdbcli import dbapi

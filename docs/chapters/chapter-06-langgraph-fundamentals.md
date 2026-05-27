@@ -1,6 +1,6 @@
 # Chapter 6: LangGraph Fundamentals
 
-In Chapter 5 we built a document ingestion pipeline that processes PDFs into both a vector store and a knowledge graph simultaneously. We now have data — rich, structured, searchable data — in SAP HANA Cloud. The next question is: how do we build an agent that reasons over it in a way that is auditable, inspectable, and safe to deploy on BTP?
+In Chapter 5 we built a document ingestion pipeline that processes PDFs into both a vector store and a Knowledge Graph simultaneously. We now have data — rich, structured, searchable data — in SAP HANA Cloud. The next question is: how do we build an agent that reasons over it in a way that is auditable, inspectable, and safe to deploy on BTP?
 
 A plain LangChain chain would work for a single retrieval followed by a single LLM call. But the system we need is more complex than that. It needs to run two retrieval strategies in parallel, decide how to merge their results, handle retries when SPARQL returns empty results, maintain conversation history across turns, and expose all of this over a single HTTP endpoint. A linear chain cannot express those decisions. We need something that can branch, loop, and conditionally route based on what it finds.
 
@@ -419,7 +419,7 @@ from langchain_core.tools import tool
 
 @tool
 def get_hazard_codes(material_number: str) -> str:
-    """Retrieve GHS hazard codes for a material from the knowledge graph."""
+    """Retrieve GHS hazard codes for a material from the Knowledge Graph."""
     # In a real implementation this queries HANA SPARQL
     return "H225, H319, H336"
 ```

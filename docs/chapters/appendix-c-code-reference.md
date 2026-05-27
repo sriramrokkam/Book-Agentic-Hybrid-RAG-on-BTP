@@ -32,7 +32,7 @@ book-agentic-hybrid-rag-on-btp/
 │   ├── package.json
 │   ├── mta.yaml
 │   └── .env.example
-├── MSDS_Ontology.ttl          # OWL ontology for the knowledge graph
+├── MSDS_Ontology.ttl          # OWL ontology for the Knowledge Graph
 └── README.md
 ```
 
@@ -155,7 +155,7 @@ Implements the vector retrieval chain. Steps: embed question with `text-embeddin
 
 **Chapter:** 8
 
-Implements the knowledge graph retrieval chain. Steps: generate SPARQL from question using Gemini, execute via `SPARQL_EXECUTE`, retry with a broader fallback query if empty, summarise facts with Gemini.
+Implements the Knowledge Graph retrieval chain. Steps: generate SPARQL from question using Gemini, execute via `SPARQL_EXECUTE`, retry with a broader fallback query if empty, summarise facts with Gemini.
 
 | Symbol | Description |
 |--------|-------------|
