@@ -257,42 +257,31 @@ GCP_LOCATION=us-central1
 
 > **How ADC works:** The Vertex AI SDK checks for credentials in this order: (1) `GOOGLE_APPLICATION_CREDENTIALS` env var, (2) ADC file from `gcloud auth application-default login`, (3) attached service account metadata. For local development, step 2 handles it automatically. Official reference: `cloud.google.com/docs/authentication/application-default-credentials`
 
-### Option B — BTP Cloud Foundry Deployment: API Key
+### Option B — BTP Cloud Foundry Deployment: Service Account JSON Key
 
-When you deploy to BTP CF in Chapter 10, the container has no gcloud CLI and no access to your local ADC file. Use a GCP API key scoped to Vertex AI.
+When you deploy to BTP CF in Chapter 10, the container has no gcloud CLI and no access to your local ADC file. The Vertex AI credentials are provided via a service account JSON key stored securely in the BTP Destination Service.
 
-In GCP Console → **APIs & Services** → **Credentials** → **Create Credentials** → **API Key**.
+To generate the JSON key: in GCP Console → **IAM & Admin** → **Service Accounts** → click your service account → **Keys** tab → **Add Key** → **Create new key** → **JSON**. A `.json` file downloads to your machine.
 
-Once created, click **Edit API Key** and restrict it:
+> **Note:** If key creation is blocked by an org policy (`iam.disableServiceAccountKeyCreation`), this means you are using a corporate GCP organisation. Use a personal Gmail account as described above — personal accounts do not have this restriction.
 
-| Setting | Value |
-|---------|-------|
-| API restrictions | Restrict key → Vertex AI API |
-| Application restrictions | None (for CF deployment) |
-
-Copy the key value. You will set it as a CF environment variable in Chapter 10:
-
-```bash
-cf set-env agentic-rag-backend GOOGLE_API_KEY "AIza..."
-```
-
-> **Never put the API key in `manifest.yml` or commit it to git.** Set it via `cf set-env` only. The key value is never written to any file in the repository.
-
-> **Note:** If you later need to rotate or revoke the key, go to APIs & Services → Credentials → select the key → Delete. A new key can be generated in under a minute.
+Keep this file safe. You will use its contents to configure the BTP Destination in the next section. Never commit it to git — it is listed in `.gitignore` already.
 
 ---
 
 ## 2.6 Configuring the BTP Destination Service
 
-The BTP Destination Service is the secure credential store that connects your BTP applications to external services. Your FastAPI agent will read the Vertex AI credentials from this destination at runtime — the JSON key never lives in application code or in `manifest.yml`.
+The BTP Destination Service is the secure credential store that connects your BTP applications to external services. Your FastAPI agent reads the Vertex AI credentials from this destination at runtime — the service account key never lives in application code or in `manifest.yml`.
 
-This is the SAP-native way to manage external service credentials, and it is an important pattern to understand from an enterprise architecture perspective. In BTP enterprise architecture, the Destination Service is the standard pattern for externalising all external API credentials — your agent switches AI providers by changing a destination configuration in the BTP Cockpit, not by touching application code or triggering a redeployment. This is the same pattern used for S/4HANA connectivity, external REST APIs, and OAuth token exchange across the entire BTP portfolio. In a landscape where dozens of BTP applications may share the same external service connection, this centralised approach also simplifies credential governance and audit trails — both of which matter in regulated industries.
+This is the SAP-native way to manage external service credentials. In BTP enterprise architecture, the Destination Service is the standard pattern for externalising all external API credentials — your agent switches AI providers by changing a destination configuration in the BTP Cockpit, not by touching application code or triggering a redeployment. The same pattern is used for S/4HANA connectivity, external REST APIs, and OAuth token exchange across the BTP portfolio.
 
 ### Creating the Destination
 
 In the BTP Cockpit, go to your trial subaccount → **Connectivity** → **Destinations** → **New Destination**.
 
 *Screenshot pending: BTP Cockpit → Connectivity → Destinations — the New Destination button and the configured VertexAI destination entry.*
+
+The correct authentication type is **OAuth2ClientCredentials**. BTP will fetch a short-lived access token from Google's token endpoint before each Vertex AI API call. The values come directly from your service account JSON key file.
 
 Fill in the destination configuration:
 
@@ -303,23 +292,24 @@ Fill in the destination configuration:
 | Description | `Google Vertex AI API (Gemini + Embeddings)` |
 | URL | `https://us-central1-aiplatform.googleapis.com` |
 | Proxy Type | `Internet` |
-| Authentication | `NoAuthentication` |
+| Authentication | `OAuth2ClientCredentials` |
+| Client ID | `client_email` value from your JSON key file |
+| Client Secret | `private_key` value from your JSON key file |
+| Token Service URL | `token_uri` value from your JSON key file (typically `https://oauth2.googleapis.com/token`) |
 
 Click **New Property** to add these additional properties:
 
 | Property | Value |
 |----------|-------|
-| `gcp.project_id` | Your GCP project ID (e.g., `agentic-rag-btp`) |
-| `gcp.location` | `us-central1` |
-| `gcp.service_account_key` | The **entire contents** of your `gcp-sa-key.json` file, pasted as a single string |
+| `google.project_id` | `project_id` value from your JSON key file |
+| `google.private_key_id` | `private_key_id` value from your JSON key file |
+| `google.client_email` | `client_email` value from your JSON key file |
 
-> **Note:** Fill in all destination fields as shown in the table above. Paste your GCP service account JSON key into the token service URL credentials field.
+> **Where to find these values:** Open your downloaded `gcp-sa-key.json` in a text editor. It is a JSON object with fields including `client_email`, `private_key`, `token_uri`, `project_id`, and `private_key_id`. Map each field directly to the destination field above. The `private_key` is the multi-line RSA key — paste the entire value including the `-----BEGIN/END PRIVATE KEY-----` markers.
 
-Click **Save**, then click **Check Connection**. You should see a green "200 OK" response.
+Click **Save**, then click **Check Connection**. A `200 OK` response confirms the OAuth2 token exchange is working and the Vertex AI endpoint is reachable.
 
-> **Tip:** After saving, click "Check Connection" at the bottom of the destination form. A "200 OK" response confirms the credentials are valid.
-
-> **Note:** The `gcp.service_account_key` property stores the raw JSON — not a file path. Open `gcp-sa-key.json` in a text editor, select all, copy, and paste the entire JSON object into the property value field. BTP encrypts this value at rest.
+> **Why OAuth2ClientCredentials, not NoAuthentication?** The Vertex AI API requires a valid Google OAuth2 bearer token on every request. With `OAuth2ClientCredentials`, BTP handles token acquisition and refresh automatically — your application code never manages token lifecycle. With `NoAuthentication`, you would have to implement token exchange yourself in the Python agent, which is both error-prone and a security anti-pattern.
 
 ---
 
