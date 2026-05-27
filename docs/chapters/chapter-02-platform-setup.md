@@ -77,21 +77,21 @@ Fill in your details. Use a personal email address if possible — corporate ema
 
 Once logged in, you will land on the **BTP Cockpit** — the central control panel for all BTP services.
 
-![SAP BTP Cockpit](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/btp/04-btp-trial-created.png)
+![SAP BTP Cockpit](docs/screenshots/btp/04-btp-trial-created.png)
 *Figure: SAP BTP Cockpit home screen showing your Global Account and trial subaccount*
 
 ### Navigating to Your Trial Subaccount
 
 The BTP Cockpit has a hierarchy: Global Account → Subaccount → Space. Your trial comes with one subaccount called "trial." Click it.
 
-![BTP Subaccount Overview](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/btp/05-btp-subaccount.png)
+![BTP Subaccount Overview](docs/screenshots/btp/05-btp-subaccount.png)
 *Figure: BTP trial subaccount overview page*
 
 Inside the subaccount, you will see your **Cloud Foundry environment**. Note your CF API endpoint — it will look like `https://api.cf.eu10.hana.ondemand.com`. You will need this later.
 
 Click **Cloud Foundry** → **Spaces**. You should see a space called "dev." This is where you will deploy your applications.
 
-![BTP Cloud Foundry Spaces](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/hana/01-hana-subaccount.png)
+![BTP Cloud Foundry Spaces](docs/screenshots/hana/01-hana-subaccount.png)
 *Figure: Cloud Foundry space view — note your org name and the "dev" space*
 
 > **Write these down now:**
@@ -109,7 +109,7 @@ HANA Cloud is provisioned from the BTP Cockpit. This is a one-time setup that ta
 
 From your trial subaccount, go to **Services** → **Service Marketplace**. Search for "HANA Cloud."
 
-![BTP Service Marketplace](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/btp/06-btp-marketplace.png)
+![BTP Service Marketplace](docs/screenshots/btp/06-btp-marketplace.png)
 *Figure: BTP Service Marketplace — search for "HANA Cloud" to find the tile*
 
 Click the HANA Cloud tile → **Create**. You will be taken to the HANA Cloud provisioning wizard.
@@ -123,12 +123,12 @@ Fill in the configuration:
 | Memory | 30 GB (the trial default — do not reduce) |
 | Storage | 120 GB (the trial default) |
 
-![HANA Cloud Provisioning](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/hana/03-hana-create.png)
+![HANA Cloud Provisioning](docs/screenshots/hana/03-hana-create.png)
 *Figure: HANA Cloud instance creation wizard — set instance name and keep default 30GB memory*
 
 Click **Create**. Provisioning takes approximately 10–15 minutes. You will see the instance appear in the SAP HANA Cloud Central tool with a "Starting" status.
 
-![HANA Cloud Central](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/hana/04-hana-central.png)
+![HANA Cloud Central](docs/screenshots/hana/04-hana-central.png)
 *Figure: SAP HANA Cloud Central showing the instance provisioning status*
 
 Wait until the status shows **Running** before proceeding.
@@ -139,8 +139,23 @@ By default, HANA Cloud provisions with the vector engine enabled in trial. To co
 
 Under **Additional Features**, verify that **Script Server** and **Document Store** are enabled. The vector engine (REAL_VECTOR column type) is part of the core engine — no separate flag is needed.
 
-![HANA Cloud Central](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/hana/04-hana-central.png)
+![HANA Cloud Central](docs/screenshots/hana/04-hana-central.png)
 *Figure: HANA Cloud Central — click your instance to manage settings and verify vector engine availability*
+
+### Enabling the Knowledge Graph Engine
+
+The Knowledge Graph (Graph engine) in HANA Cloud is **not enabled by default**. Without it, all SPARQL queries in Chapters 4, 5, 7, and 8 will fail silently.
+
+During the HANA Cloud instance creation wizard, before clicking **Create**:
+
+1. Scroll down to **Advanced Settings**
+2. Expand the **Additional Features** section
+3. Enable the toggle for **Script Server** (required for stored procedures including SPARQL_EXECUTE)
+4. Enable the toggle for **Document Store** — this activates the Graph engine
+
+> **Critical:** If you already created your HANA Cloud instance without enabling these features, you must either delete and recreate the instance, or contact SAP Support to enable them on an existing instance. There is no way to enable the Graph engine on a running instance via the Cockpit.
+
+*[Screenshot: HANA Cloud creation wizard — Advanced Settings panel with Script Server and Document Store toggles enabled]*
 
 ### Getting Your HANA Connection Details
 
@@ -167,14 +182,14 @@ Save these:
 
 Go to `cloud.google.com/free` and click **Get started for free**.
 
-![GCP Free Tier](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/gcp/01-gcp-free-tier.png)
+*[Screenshot: Google Cloud Free Trial page at cloud.google.com/free — click "Get started for free" to claim your $300 credit]*
 *Figure: Google Cloud free tier page — click "Get started for free" to claim your $300 credit*
 
 Sign in with your Google account. GCP will ask for a credit card for identity verification — **you will not be charged** during the free trial, and the $300 credit covers everything in this book many times over.
 
 After signup, you will land on the **GCP Console**.
 
-![GCP Console](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/gcp/01-vertex-ai-overview.png)
+*[Screenshot: Google Cloud Console — project selector in top navigation bar, Vertex AI API enabled]*
 *Figure: Google Cloud Console — your project selector appears in the top navigation bar*
 
 ### Creating a New Project
@@ -270,7 +285,7 @@ This is the SAP-native way to manage external service credentials, and it is an 
 
 In the BTP Cockpit, go to your trial subaccount → **Connectivity** → **Destinations** → **New Destination**.
 
-![BTP Entitlements](/Users/I310202/01.Local_Developments/99-Books/book/book-agentic-hybrid-rag-on-btp/docs/screenshots/hana/02-hana-entitlements.png)
+*[Screenshot: BTP Cockpit → Connectivity → Destinations — click "New Destination" to create the Vertex AI destination]*
 *Figure: BTP Connectivity → Destinations — click "New Destination" to create the Vertex AI destination*
 
 Fill in the destination configuration:
