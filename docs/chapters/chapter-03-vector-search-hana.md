@@ -6,7 +6,7 @@ The same applies to every document type the Material Document Intelligence Platf
 
 By the end of this chapter you will have a working vector search system on HANA Cloud. You will take a chunk of text from a material document, turn it into a 768-dimensional vector using Google's `text-embedding-004` model, store it in a `REAL_VECTOR` column, and retrieve the most semantically similar chunks for a natural language question — all in roughly 200 lines of Python.
 
-The closing section of this chapter is equally important: an honest account of what vector search cannot do. That limitation is the precise motivation for Chapter 4, where we add a knowledge graph to handle the queries that vectors get wrong.
+The closing section of this chapter is equally important: an honest account of what vector search cannot do. That limitation is the precise motivation for Chapter 4, where we add a Knowledge Graph to handle the queries that vectors get wrong.
 
 ---
 
@@ -273,44 +273,55 @@ We embed the question (one Vertex AI call), build the parameter string the same 
 
 ---
 
-## 3.7 Chunking Strategy for Material Documents
+## 3.7 Chunk Size Analysis and Boundary Strategy for SAP Material Documents
 
-We have skipped over the most consequential design decision in any RAG system: how do you split a document into chunks?
+Chunking is the most consequential design decision in any RAG system — and it is rarely given enough attention. The wrong chunk size silently degrades retrieval quality without producing any obvious error. This section explains the reasoning behind every number we use, grounded in the specific document types in this platform.
 
-Chunking is necessary because a 12-page MSDS does not fit usefully into a single embedding. Even if it did, retrieval would always return "the whole document" and the LLM would have to do all the work of finding the relevant sentence. Chunking lets us push the relevance work into the database.
+### Why chunking exists at all
 
-The trade-off is fundamental:
+A batch quality certificate is typically 2–4 pages. An equipment maintenance history can run to 20 pages. A full MSDS is 16 structured sections. Embedding an entire document as one vector produces one point in 768-dimensional space — a single embedding that represents everything and therefore retrieves nothing precisely. When the user asks "what was the tensile strength result for batch BATCH-2024-0871?", a whole-document embedding returns the entire certificate whether or not the test result is the dominant topic. Chunking breaks the document into pieces small enough that each embedding represents one focused idea — and retrieval returns the right piece, not the whole document.
 
-- **Smaller chunks** (a sentence each) give precise retrieval — when the model returns chunk 47, you know exactly which sentence it cared about. But you lose context. A sentence like "It must be stored away from this material" is meaningless without the surrounding paragraph.
-- **Larger chunks** (a full page) preserve context but introduce noise. A paragraph about flammability that also mentions "appropriate PPE" might score highly for a PPE question even though the actual PPE answer is on a different page.
+### The chunk size trade-off
 
-The right chunking strategy adapts to document structure. Different document types that flow through the Material Document Intelligence Platform have different natural boundaries.
+Every chunking decision sits on a spectrum between two failure modes:
 
-For **MSDS documents**, the OSHA 16-section format provides the primary boundary. Section 4 is always First Aid. Section 7 is always Handling and Storage. Section 8 is always Exposure Controls and PPE. These sections are typically 100–300 words — exactly the right size. We use OSHA section headers as the primary split point.
+**Too small (under 100 tokens — a sentence or two):** Retrieval becomes precise but brittle. A single sentence like *"Result: PASS"* scores perfectly for "did this batch pass?" but provides no context about which test, which specification, or which method. The LLM synthesising an answer from five isolated sentences produces a shallow, disconnected response. Short chunks also multiply storage and search cost — a 20-page maintenance history at 30-token chunks produces 600+ vectors where 60 would suffice.
 
-For **invoices**, the natural boundary is the line item block — each item group (description, quantity, unit price, total) forms one chunk. Header data (vendor, PO reference, payment terms) becomes its own chunk.
+**Too large (over 600 tokens — a full page):** Retrieval becomes noisy. A page of a batch certificate that covers tensile strength, yield strength, and elongation simultaneously scores moderately for all three questions but tops the ranking for none of them. The chunk also contains irrelevant content that consumes LLM context window without contributing to the answer.
 
-For **batch certificates**, the natural boundary is the test result section — each analytical parameter and its pass/fail result becomes a chunk. Summary sections and methodology notes are separate chunks.
+**The sweet spot for SAP material documents is 400–500 tokens.** This range consistently captures one complete logical unit — one test result block, one invoice line item group, one maintenance procedure step, one MSDS section — without spilling into adjacent topics.
 
-For **maintenance manuals**, procedure steps are the natural boundary — each numbered step with its safety caution and tooling note stays together as a chunk.
+### Why 50-token overlap
 
-The chunking approach adapts to document structure. The vector storage and retrieval code — `MSDS_VECTORS`, `store_embedding`, `search_similar` — does not change. The same HANA SQL runs identically regardless of whether the chunk came from an MSDS flammability section or an invoice payment terms block.
+Overlap exists to handle boundary sentences. Consider a batch certificate where the methodology description ends at token 495 of a chunk and the test result begins at token 1 of the next chunk. Without overlap, a question about "how was the tensile test performed and what did it find?" retrieves either the methodology chunk or the result chunk — but not both, because neither chunk alone contains the complete answer. With 50-token overlap, the result chunk begins with the last two sentences of the methodology, giving the embedding model enough context to score it correctly for the combined question.
 
-Our chunking rule for MSDS documents, which we will implement in Chapter 5 when we build `doc_srv.py`:
+Fifty tokens (roughly 2–3 sentences) is the empirically right overlap for enterprise documents with dense, structured content. It is small enough that it does not double-count content in retrieval, and large enough to bridge the boundary for the most common cross-boundary questions.
 
-1. **Primary boundary:** OSHA section header. Each numbered section becomes one chunk.
-2. **Secondary boundary:** if a section exceeds ~500 tokens, split on the next paragraph boundary inside it.
-3. **Overlap:** each chunk shares ~50 tokens with the preceding chunk. This keeps a sentence from being orphaned at the boundary — if the relevant sentence happens to be the first one of a chunk, the prior chunk also contains it as context.
+### Natural boundaries by document type
 
-Token-wise, our targets are:
+The 500-token maximum is a ceiling, not a target. Each document type in this platform has natural semantic boundaries that should be the primary split point — the 500-token limit is only the fallback when a natural section runs long.
 
-- Minimum chunk size: ~100 tokens (anything smaller loses context)
-- Maximum chunk size: ~500 tokens (anything larger gets noisy)
-- Overlap: ~50 tokens
+| Document Type | Primary split boundary | Typical chunk size | Notes |
+|---|---|---|---|
+| **Batch Quality Certificate** | Per test parameter block | 150–300 tokens | Each test (tensile, yield, elongation) becomes one chunk — supplier, result, specification, pass/fail together |
+| **GR Inspection Report** | Per line item inspected | 200–350 tokens | Inspector observations and QM decision stay in the same chunk as the line item |
+| **Equipment Maintenance History** | Per maintenance order / service event | 300–500 tokens | Failure description and root cause must stay together — splitting them breaks the narrative |
+| **Supplier Invoice** | Header + per line item block | 100–250 tokens | Header (vendor, PO, payment terms) is one chunk; each line item is a separate chunk |
+| **MSDS** | Per OSHA section (1–16) | 150–400 tokens | Section headers are always present and map exactly to knowledge domains |
 
-> **Tip:** Tokens, not characters. A token is roughly 4 characters of English text or about 0.75 of a word. `text-embedding-004` accepts up to 2,048 tokens per embedding call, so we have plenty of headroom — 500 tokens is well under the limit.
+### Our chunking parameters
 
-For the test in this chapter we hand-write five short chunks that look like real document sentences. The full document chunker arrives in Chapter 5. The point of the test is to validate the round-trip: embed → store → embed-question → search → score.
+```python
+CHUNK_SIZE    = 500   # tokens — maximum per chunk
+CHUNK_OVERLAP = 50    # tokens — shared context at boundaries
+CHUNK_MIN     = 100   # tokens — discard anything shorter (headers, page numbers)
+```
+
+These are implemented in `doc_srv.py` in Chapter 5 using LangChain's `RecursiveCharacterTextSplitter` with a `tiktoken` encoder. The splitter respects paragraph boundaries first, then sentence boundaries, falling back to character boundaries only when a paragraph exceeds the maximum. This produces chunks that almost always end at a natural linguistic break — not mid-sentence.
+
+> **Tip:** Tokens, not characters. `text-embedding-004` accepts up to 2,048 tokens per call — our 500-token maximum is well within the limit. One token is approximately 4 characters of English text or 0.75 of a word.
+
+> **Note:** For the tests in this chapter we hand-write five chunks representing a batch quality certificate. The full document chunker with these parameters is implemented in Chapter 5. The goal here is to validate the round-trip: embed → store → embed-question → search → score. Chunking quality is a Chapter 5 concern.
 
 ---
 
@@ -555,11 +566,11 @@ Three categories of question hit this limitation hard:
 2. **Aggregations and counts.** "How many of our batches from supplier ACME Steel AG passed tensile testing this quarter?" is impossible for vector search — there is no "count" embedding direction. You need structured query.
 3. **Negation and exclusion.** "Show me inspection reports where the inspector did *not* record a usage decision of 'Restricted'." Embeddings have no robust way to encode "not" — the embedding for "usage decision: Restricted" and "usage decision: not Restricted" is closer than you would hope.
 
-SAP customers running on HANA have always thought in structured terms. Materials, batch lot numbers, certificate identifiers, test result values — these are not free text. They are master data. They live in tables with foreign keys. They are the kind of thing a knowledge graph models naturally.
+SAP customers running on HANA have always thought in structured terms. Materials, batch lot numbers, certificate identifiers, test result values — these are not free text. They are master data. They live in tables with foreign keys. They are the kind of thing a Knowledge Graph models naturally.
 
 That is the bridge into Chapter 4. We will take the same material document, extract its structured facts into RDF triples, store them in HANA's graph engine, and query them with SPARQL. When the quality engineer asks "What is the certificate number for this batch?", we will return "QC-CERT-44781" with full confidence — not by guessing from a 0.65 cosine similarity, but by traversing a graph relationship that was set when the document was ingested.
 
-The full Hybrid RAG agent in Chapter 7 runs both retrievers in parallel and lets a routing classifier decide which answer to trust. Vector search owns the fuzzy questions. The knowledge graph owns the precise ones. Neither is sufficient alone; together they cover the question space enterprise document users actually ask.
+The full Hybrid RAG agent in Chapter 7 runs both retrievers in parallel and lets a routing classifier decide which answer to trust. Vector search owns the fuzzy questions. The Knowledge Graph owns the precise ones. Neither is sufficient alone; together they cover the question space enterprise document users actually ask.
 
 ---
 
@@ -573,7 +584,7 @@ In this chapter you built a working vector search system on HANA Cloud. The majo
 - **The cosine similarity query has five clauses, each load-bearing.** `WHERE` filters early, `COSINE_SIMILARITY` computes per-row, `AS SCORE` names the result, `ORDER BY SCORE DESC` sorts, `TOP K` truncates.
 - **Chunking adapts to document structure; the storage code does not.** MSDS documents use OSHA section boundaries. Invoices use line-item blocks. Batch certificates use test result sections. The same `MSDS_VECTORS` table and `search_similar` function serve all document types.
 - **The `MATERIAL_NUMBER` column is the anchor to SAP MM.** The CAP layer validates it against S/4HANA product master via API_PRODUCT_SRV before accepting uploads. Every vector in the table is traceable to a real, validated SAP material.
-- **Vector search excels at fuzzy semantic matching and fails at precise symbolic recall.** The exact identifier problem — certificate numbers, batch lot numbers, PO numbers — motivates the knowledge graph in Chapter 4.
+- **Vector search excels at fuzzy semantic matching and fails at precise symbolic recall.** The exact identifier problem — certificate numbers, batch lot numbers, PO numbers — motivates the Knowledge Graph in Chapter 4.
 
 The codebase now has working `hdb_srv.py`, `vertex_srv.py`, and `vector_srv.py` modules, plus a passing `test_vector.py` script. The vector retrieval half of the Hybrid RAG agent is live.
 
