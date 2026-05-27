@@ -121,9 +121,9 @@ SUPERVISOR_PROMPT = """You are a routing agent for a material document intellige
 Your job is to analyse a user's question and route it to the right specialist agents.
 
 Each specialist uses a different retrieval strategy — route to the specialist whose strategy best matches the question type:
-- "hazard": answers questions about structured facts — GHS hazard codes, hazard classifications, signal words, hazard statements. Uses the Knowledge Graph.
-- "compliance": answers questions about regulatory requirements — exposure limits, permissible concentrations, OSHA/ACGIH thresholds, legal obligations. Uses both Knowledge Graph and document search.
-- "safety": answers questions about narrative procedures — first aid, PPE requirements, storage instructions, handling precautions, spill response. Uses document search.
+- "hazard": answers questions about structured facts — test methods, test results, certificate numbers, batch identifiers, certifying laboratory. Uses the Knowledge Graph.
+- "compliance": answers questions about regulatory and specification requirements — acceptance criteria, tolerances, regulatory thresholds, quality holds. Uses both Knowledge Graph and document search.
+- "safety": answers questions about narrative procedures — storage conditions, handling instructions, delivery requirements, inspection procedures. Uses document search.
 
 For each specialist you select, write a focused sub-question that extracts only the relevant part of the user's question.
 
@@ -131,9 +131,9 @@ Respond in JSON format only:
 {{
   "specialists": ["hazard", "compliance", "safety"],
   "sub_questions": {{
-    "hazard": "What GHS hazard codes and classifications apply to {material}?",
-    "compliance": "What are the worker exposure limits for {material}?",
-    "safety": "What PPE and handling precautions are required for {material}?"
+    "hazard": "What test methods and results are recorded for {material}?",
+    "compliance": "What are the acceptance criteria and specification limits for {material}?",
+    "safety": "What are the storage and handling requirements for {material}?"
   }}
 }}
 
@@ -442,8 +442,8 @@ The `use_supervisor` flag lets the caller choose which agent to use. The Fiori U
 curl -X POST http://localhost:8000/query-advanced \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "I am setting up a new lab that will store acetone. What hazard classifications do I need to post, what are the legal exposure limits for my workers, and what PPE should I provide?",
-    "material_number": "ACE001",
+    "question": "We are onboarding a new supplier for steel components. What test methods are documented in the batch certificate, what are the acceptance criteria, and what are the storage requirements before GR inspection?",
+    "material_number": "BATCH-QC-MAT-001",
     "history": [],
     "use_supervisor": true
   }'
@@ -454,9 +454,9 @@ Expected supervisor routing (logged to console):
 ```
 INFO: Supervisor routed to: ['hazard', 'compliance', 'safety']
 INFO: Sub-questions:
-  hazard:     "What GHS hazard codes and classifications apply to ACE001?"
-  compliance: "What are the worker exposure limits for ACE001?"
-  safety:     "What PPE is required when storing and handling ACE001?"
+  hazard:     "What test methods and results are recorded for BATCH-QC-MAT-001?"
+  compliance: "What are the acceptance criteria and specification limits for BATCH-QC-MAT-001?"
+  safety:     "What are the storage and handling requirements for BATCH-QC-MAT-001?"
 INFO: hazard specialist completed in 2.1s
 INFO: compliance specialist completed in 1.9s
 INFO: safety specialist completed in 2.3s
@@ -466,7 +466,7 @@ INFO: Summary agent completed in 1.4s
 
 The three specialists run in parallel. The total wall-clock time for specialists is 2.3 seconds (the slowest), not 6.3 seconds (the sum). The summary adds 1.4 seconds, for a total of about 3.7 seconds.
 
-Compare this to the direct hybrid RAG agent with the same question: the single retrieval pass would retrieve 5 passages from across all three domains, giving the answer approximately 2 passages per domain. The supervisor gives each domain 5 full passages, producing a noticeably more detailed and better-organised answer — especially critical when the question spans GHS codes (structured, from KG), regulatory limits (structured, from KG), and PPE procedures (narrative, from vector store).
+Compare this to the direct hybrid RAG agent with the same question: the single retrieval pass would retrieve 5 passages from across all three domains, giving the answer approximately 2 passages per domain. The supervisor gives each domain 5 full passages, producing a noticeably more detailed and better-organised answer — especially critical when the question spans test results (structured, from Knowledge Graph), acceptance criteria (structured, from Knowledge Graph), and storage procedures (narrative, from vector store).
 
 ---
 
@@ -519,8 +519,8 @@ print('Supervisor graph OK, nodes:', list(app.get_graph().nodes.keys()))
 python -c "
 from agents.supervisor import supervisor_node
 state = {
-  'question': 'What are the hazard codes for acetone?',
-  'material_number': 'ACE001',
+  'question': 'What test method was used for the tensile strength test?',
+  'material_number': 'BATCH-QC-MAT-001',
   'history': [],
   'sub_questions': {}, 'specialists_needed': [],
   'hazard_answer': '', 'compliance_answer': '', 'safety_answer': '',
@@ -534,8 +534,8 @@ print('specialists needed:', result['specialists_needed'])
 curl -s -X POST http://localhost:8000/query-advanced \
   -H 'Content-Type: application/json' \
   -d '{
-    "question": "What are the GHS hazard codes for acetone?",
-    "material_number": "ACE001",
+    "question": "What test method was used for the tensile strength test?",
+    "material_number": "BATCH-QC-MAT-001",
     "history": [],
     "use_supervisor": false
   }' | python -m json.tool

@@ -21,7 +21,7 @@ Consider the naive approach: run vector search, check the result, then decide wh
 | Routing: LLM decides which to use | 1 s + 2 s = 3 s | 2 | Routing LLM skips useful path |
 | **Parallel: both simultaneously** | **max(2 s, 2 s) = 2 s** | **2** | **None** |
 
-The parallel approach is faster than all sequential variants and uses fewer LLM calls than the routing variant. More importantly, it eliminates the routing error entirely. A routing LLM might decide that "what are the GHS codes for acetone?" is a structured query and skip the vector chain — missing the handling instructions that live only in prose. By always running both, we guarantee that no retrieval path is skipped. For enterprise systems where completeness matters — a safety officer needs all relevant information, not just what the system guesses is most relevant — this deterministic behaviour is non-negotiable.
+The parallel approach is faster than all sequential variants and uses fewer LLM calls than the routing variant. More importantly, it eliminates the routing error entirely. A routing LLM might decide that "what test method was used for the tensile strength test?" is a structured query and skip the vector chain — missing the test procedure details that live only in prose. By always running both, we guarantee that no retrieval path is skipped. For enterprise systems where completeness matters — a quality engineer needs all relevant information, not just what the system guesses is most relevant — this deterministic behaviour is non-negotiable.
 
 ![Parallel Orchestrator Architecture](docs/screenshots/diagrams/08-parallel-orchestrator.png)
 *Figure 7.1: The parallel hybrid RAG orchestrator — both chains run concurrently via ThreadPoolExecutor(max_workers=2). Wall-clock latency equals the slower of the two chains, not their sum.*
@@ -566,25 +566,25 @@ POST /query
 Content-Type: application/json
 
 {
-  "question": "What are the GHS hazard codes for acetone?",
-  "material_number": "ACE001",
+  "question": "What test method was used for the tensile strength test?",
+  "material_number": "BATCH-QC-MAT-001",
   "history": [
-    {"role": "user",      "content": "What is acetone used for?"},
-    {"role": "assistant", "content": "Acetone is a common solvent used in..."}
+    {"role": "user",      "content": "What is the batch lot number?"},
+    {"role": "assistant", "content": "The batch lot number is..."}
   ]
 }
 
 // Response
 {
-  "answer": "The GHS hazard codes for acetone are H225 (Highly flammable liquid and vapour), H319 (Causes serious eye irritation), and H336 (May cause drowsiness or dizziness).",
-  "kg_sparql": "PREFIX msds: <...>\nSELECT ?code ?desc WHERE { GRAPH <...> { <...ACE001> msds:hasHazardCode ?hc . ?hc rdfs:label ?code . ?hc msds:hazardDescription ?desc } }",
+  "answer": "The tensile test used ISO 6892-1 methodology with 450 MPa yield strength and 22% elongation at break.",
+  "kg_sparql": "PREFIX msds: <...>\nSELECT ?code ?desc WHERE { GRAPH <...> { <...BATCH-QC-MAT-001> msds:hasHazardCode ?hc . ?hc rdfs:label ?code . ?hc msds:hazardDescription ?desc } }",
   "kg_facts": [
-    "('H225', 'Highly flammable liquid and vapour')",
-    "('H319', 'Causes serious eye irritation')",
-    "('H336', 'May cause drowsiness or dizziness')"
+    "('ISO 6892-1', 'Tensile test standard')",
+    "('450 MPa', 'Yield strength')",
+    "('22%', 'Elongation at break')"
   ],
   "vector_chunks": [
-    {"text": "Section 2: Hazard Identification...", "score": 0.847, "chunk_index": 2},
+    {"text": "Section 2: Test Results...", "score": 0.847, "chunk_index": 2},
     ...
   ],
   "sources": ["Knowledge graph: 3 facts", "Document search: 5 passages"]
@@ -602,21 +602,21 @@ The `/query` endpoint accepts a `history` list in the request body. This is how 
 ```python
 # First question — no history
 POST /query
-{"question": "What are the hazard codes for acetone?", "material_number": "ACE001", "history": []}
+{"question": "What test method was used for the tensile strength test?", "material_number": "BATCH-QC-MAT-001", "history": []}
 
 # Second question — pass previous turn
 POST /query
 {
-  "question": "And what PPE should I wear when handling it?",
-  "material_number": "ACE001",
+  "question": "And what is the certified testing laboratory?",
+  "material_number": "BATCH-QC-MAT-001",
   "history": [
-    {"role": "user",      "content": "What are the hazard codes for acetone?"},
-    {"role": "assistant", "content": "The GHS hazard codes are H225, H319, and H336."}
+    {"role": "user",      "content": "What test method was used for the tensile strength test?"},
+    {"role": "assistant", "content": "The tensile test used ISO 6892-1 methodology with 450 MPa yield strength."}
   ]
 }
 ```
 
-The answer node in the LangGraph graph includes the history in its prompt, so the second question gets a contextually aware answer ("Given the flammability hazard H225 that we discussed, you should wear...") without any server-side state.
+The answer node in the LangGraph graph includes the history in its prompt, so the second question gets a contextually aware answer ("Given the ISO 6892-1 tensile test methodology we discussed, the certified laboratory that performed the test is...") without any server-side state.
 
 The CAP Fiori frontend keeps a rolling window of the last 10 messages — enough for conversational context without ballooning the prompt. Older messages are silently dropped.
 
@@ -624,67 +624,68 @@ The CAP Fiori frontend keeps a rolling window of the last 10 messages — enough
 
 ## 7.10 Testing: three scenarios that prove hybrid wins
 
-The following three test cases demonstrate why hybrid retrieval is better than either strategy alone. Each scenario reflects a real role in an SAP-using organisation asking a real question against an MSDS document for acetone (MAT-001). Run them after uploading the acetone MSDS to both stores.
+The following three test cases demonstrate why hybrid retrieval is better than either strategy alone. Each scenario reflects a real role in an SAP-using organisation asking a real question against a batch quality certificate (BATCH-QC-MAT-001). Run them after uploading the batch quality certificate to both stores.
 
-### 7.10.1 The KG wins: a safety officer asks about hazard classifications
+### 7.10.1 The KG wins: a quality engineer asks about test specifications
 
-A safety officer asks: "What are the GHS hazard codes for acetone, and what do they mean?"
+A quality engineer asks about the test methodology used in the batch certificate: "What test method was used for the tensile strength test, and what were the results?"
 
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What are the GHS hazard codes for acetone, and what do they mean?",
-    "material_number": "ACE001",
+    "question": "What test method was used for the tensile strength test, and what were the results?",
+    "material_number": "BATCH-QC-MAT-001",
     "history": []
   }'
 ```
 
 Expected KG answer:
 ```
-H225, H319, H336
+ISO 6892-1 tensile test method
 ```
 
 Expected vector answer (typical):
 ```
-Acetone is classified under several GHS hazard categories. The safety data
-sheet indicates it is a highly flammable substance with eye irritation
-properties. Refer to Section 2 for complete hazard identification...
+The batch quality certificate confirms the material passed tensile strength
+testing. The test results are recorded in the mechanical properties section,
+showing yield strength and elongation measurements. Refer to the test results
+table for complete specification compliance data...
 ```
 
-The KG returns the exact codes and their official descriptions from structured triples. The vector chain returns useful prose but buries the codes in a paragraph. The synthesised answer leads with the codes and their meanings from the KG, then adds the narrative context from the vector store. The safety officer gets a complete, citable answer.
+The KG returns the exact test standard and measured values from structured triples. The vector chain returns useful prose but buries the test method in a paragraph. The synthesised answer leads with the test standard and measured results from the KG, then adds the narrative context from the vector store. The quality engineer gets a complete, citable answer.
 
-### 7.10.2 The vector wins: a quality engineer asks about first aid procedures
+### 7.10.2 The vector wins: a warehouse manager asks about storage requirements
 
-A quality engineer asks: "What first aid should I give if someone inhales acetone vapour in our lab?"
+A warehouse manager asks about storage requirements: "What are the storage requirements for the material in this batch certificate?"
 
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "What first aid should I give if someone inhales acetone vapour in our lab?",
-    "material_number": "ACE001",
+    "question": "What are the storage requirements for the material in this batch certificate?",
+    "material_number": "BATCH-QC-MAT-001",
     "history": []
   }'
 ```
 
-The KG stores structured facts — hazard codes, exposure limits, precaution flags. It does not store the detailed first-aid procedure paragraph from Section 4 of the MSDS. The vector chain retrieves the exact passage. The final answer comes primarily from the vector chain, with the KG contributing the exposure limit context. The quality engineer gets the procedural instructions they actually need.
+The KG stores structured facts — test standards, specification limits, certification flags. It does not store the detailed storage conditions paragraph from the delivery and storage section of the batch certificate. The vector chain retrieves the exact passage. The final answer comes primarily from the vector chain, with the KG contributing the specification limit context. The warehouse manager gets the procedural instructions they actually need.
 
-### 7.10.3 Both contribute: a logistics manager asks a combined question
+### 7.10.3 Both contribute: a procurement manager asks a combined question
 
-A logistics manager asks: "Is acetone classified as a flammable liquid, and what precautions should I take when storing it in our warehouse?"
+A procurement manager asks: "Is the tensile strength result within specification, and what is the certified testing laboratory?"
 
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{
-    "question": "Is acetone classified as a flammable liquid and what precautions should I take when storing it?",
-    "material_number": "ACE001",
+    "question": "Is the tensile strength result within specification, and what is the certified testing laboratory?",
+    "material_number": "BATCH-QC-MAT-001",
     "history": []
   }'
 ```
 
-The KG answers the first part precisely: H225 confirms flammable liquid classification, stored as a structured triple. The vector chain answers the second part: storage precautions from Section 7 of the MSDS, retrieved as narrative prose. Neither chain could answer both parts alone. The synthesis LLM combines them into a single coherent answer. The logistics manager gets both the regulatory classification and the practical storage guidance.
+The KG answers the first part precisely: ISO 6892-1 confirms the test standard, stored as a structured triple. The vector chain answers the second part: storage conditions from the delivery and storage section of the batch certificate, retrieved as narrative prose. Neither chain could answer both parts alone. The synthesis LLM combines them into a single coherent answer. The procurement manager gets both the regulatory classification and the practical storage guidance.
 
 ---
 
@@ -731,7 +732,7 @@ In this chapter we built the core of the hybrid RAG system on top of SAP HANA Cl
 - Assembled the **orchestrator** using `ThreadPoolExecutor(max_workers=2)` for true parallel execution
 - Exposed a **`/query` endpoint** with material number validation and a clean request/response contract
 - Demonstrated **stateless conversation history** passed in every request
-- Verified with **three test scenarios** — safety officer, quality engineer, logistics manager — that hybrid retrieval outperforms either strategy alone
+- Verified with **three test scenarios** — quality engineer, warehouse manager, procurement manager — that hybrid retrieval outperforms either strategy alone
 - Added the **`sources` field** to the response for enterprise auditability
 
 ---
@@ -750,8 +751,8 @@ python -c "from agents.kg_chain import run_kg_chain; print('kg OK')"
 python -c "
 from agents.orchestrator import run_hybrid_rag
 result = run_hybrid_rag({
-    'question': 'What are the hazard codes?',
-    'material_number': 'ACE001',
+    'question': 'What test method was used for tensile strength testing?',
+    'material_number': 'BATCH-QC-MAT-001',
     'history': [],
     'vector_answer': '', 'vector_chunks': [],
     'kg_answer': '', 'kg_sparql': '', 'kg_facts': [],
@@ -764,7 +765,7 @@ print('answer:', result.get('final_answer', '')[:80])
 uvicorn main:app --port 8000 &
 curl -s -X POST http://localhost:8000/query \
   -H 'Content-Type: application/json' \
-  -d '{"question":"What is acetone?","material_number":"ACE001","history":[]}' \
+  -d '{"question":"What test method was used for tensile strength testing?","material_number":"BATCH-QC-MAT-001","history":[]}' \
   | python -m json.tool
 ```
 

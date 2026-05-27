@@ -555,8 +555,8 @@ from vertexai.language_models import TextEmbeddingModel
 embedding_model = TextEmbeddingModel.from_pretrained("text-embedding-004")
 
 test_texts = [
-    "What is the flash point of acetone?",
-    "GHS hazard classification for flammable liquids"
+    "What test method was used for tensile strength testing?",
+    "batch quality certificate test specifications"
 ]
 
 embeddings = embedding_model.get_embeddings(test_texts)
@@ -570,11 +570,11 @@ for text, embedding in zip(test_texts, embeddings):
 The output should show embeddings with dimension 768 (the dimension of `text-embedding-004`):
 
 ```
-Text: What is the flash point of acetone?...
+Text: What test method was used for tensile strength te...
 Embedding dimension: 768
 First 5 values: [0.023, -0.041, 0.018, 0.067, -0.029]
 
-Text: GHS hazard classification for flammable liquids...
+Text: batch quality certificate test specifications...
 Embedding dimension: 768
 First 5 values: [0.031, -0.038, 0.022, 0.054, -0.011]
 ```

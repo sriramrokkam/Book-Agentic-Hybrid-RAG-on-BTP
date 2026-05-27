@@ -228,7 +228,7 @@ The graph is linear: retrieve → answer → END. To invoke it:
 ```python
 if __name__ == "__main__":
     result = app.invoke({
-        "question":    "What are the hazard codes for acetone?",
+        "question":    "What test method was used for the tensile strength test?",
         "context":     "",
         "answer":      "",
         "messages":    [],
@@ -247,7 +247,7 @@ python -m agents.simple_qa_agent
 Expected output (with stub retriever):
 
 ```
-Based on the provided context, I don't have specific hazard codes for acetone.
+Based on the provided context, I don't have specific test method details for the tensile strength test.
 The context contains a placeholder rather than actual document data. Once the
 knowledge base is populated with real documents linked to the material number,
 I will be able to retrieve and report the specific information.
@@ -397,7 +397,7 @@ app = build_graph()
 
 if __name__ == "__main__":
     result = app.invoke({
-        "question":    "What are the hazard codes for acetone?",
+        "question":    "What test method was used for the tensile strength test?",
         "context":     "",
         "answer":      "",
         "messages":    [],
@@ -418,10 +418,10 @@ Define a tool with the `@tool` decorator:
 from langchain_core.tools import tool
 
 @tool
-def get_hazard_codes(material_number: str) -> str:
-    """Retrieve GHS hazard codes for a material from the Knowledge Graph."""
+def get_test_results(material_number: str) -> str:
+    """Retrieve test results for a material from the Knowledge Graph."""
     # In a real implementation this queries HANA SPARQL
-    return "H225, H319, H336"
+    return "ISO 6892-1, yield strength 450 MPa, elongation 22%"
 ```
 
 Bind tools to the LLM and use `ToolNode` for execution:
@@ -429,7 +429,7 @@ Bind tools to the LLM and use `ToolNode` for execution:
 ```python
 from langgraph.prebuilt import ToolNode
 
-tools = [get_hazard_codes]
+tools = [get_test_results]
 llm_with_tools = _get_llm().bind_tools(tools)
 tool_node = ToolNode(tools)
 
@@ -454,7 +454,7 @@ LangGraph can stream state updates as they happen. This is valuable when queries
 
 ```python
 for event in app.stream({
-    "question":    "What first aid should I give if someone inhales acetone?",
+    "question":    "What are the storage requirements for the material in this batch certificate?",
     "context":     "",
     "answer":      "",
     "messages":    [],
@@ -471,7 +471,7 @@ Expected output:
 ```
 [retrieve] completed
 [answer] completed
-  answer: If someone inhales acetone vapours, move them immediately to fresh air...
+  answer: Store in dry conditions below 25°C away from moisture...
 [check] completed
 ```
 
@@ -529,11 +529,11 @@ The conversation history pattern — where the client sends previous turns in ev
 # Frontend sends history on every request
 # POST /query
 {
-  "question": "And what about the flash point?",
-  "material_number": "MAT-001",
+  "question": "And what about the certified testing laboratory?",
+  "material_number": "BATCH-QC-MAT-001",
   "history": [
-    {"role": "user",      "content": "What are the hazard codes for acetone?"},
-    {"role": "assistant", "content": "The GHS hazard codes for acetone are H225, H319, and H336."}
+    {"role": "user",      "content": "What test method was used for the tensile strength test?"},
+    {"role": "assistant", "content": "The tensile test used ISO 6892-1 methodology with 450 MPa yield strength."}
   ]
 }
 ```
