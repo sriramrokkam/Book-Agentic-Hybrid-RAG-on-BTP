@@ -253,57 +253,16 @@ Every chapter builds on a single real-world use case:
 
 ## Appendices
 
-### Appendix A: SAP BTP Trial Setup — Step-by-Step
-Complete walkthrough with screenshots:
-- Creating a BTP trial account
-- Navigating the BTP Cockpit
-- Creating a Cloud Foundry space
-- Provisioning HANA Cloud
-- Enabling the vector engine on HANA Cloud
-- Creating a BTP Destination for Vertex AI
-
-### Appendix B: Google Cloud Setup — Step-by-Step
-Complete walkthrough with screenshots:
-- Creating a GCP account and activating $300 credit
-- Creating a new GCP project
-- Enabling the Vertex AI API
-- Creating a service account with Vertex AI User role
-- Downloading and securing the service account JSON key
-- Testing: first Gemini API call from the terminal
-
-### Appendix C: Full Code Reference
-- Complete file listing for `agents/` module
-- Complete file listing for `cap-srv/` module
-- `MSDS_Ontology.ttl` — full OWL ontology with comments
-- Sample material documents used in the book (batch quality certificates)
-- `.env.example` — all required environment variables
-
----
-
-## Enterprise Extensions
-*(Requires paid SAP subscriptions — not needed for the main book)*
-
-### Appendix D: Joule A2A Integration
-**Prerequisite:** SAP S/4HANA Cloud Public Edition or SuccessFactors subscription
-
-- What is Joule A2A? The protocol explained
-- Wrapping the Hybrid RAG Agent as a Joule capability
-- The `da.sapdas.yaml` — root agent declaration
-- Capability YAML, function handlers, scenario routing
-- SpEL expressions — what works and what does not
-- The 15-second timeout constraint — designing for Joule's limits
-- Deploying a `.daar` package to SAP Joule
-- Testing in the Joule sandbox
-
-### Appendix E: Replacing Vertex AI with SAP AI Core
+### Appendix A: SAP AI Core — Enterprise LLM Integration
 **Prerequisite:** SAP AI Core subscription (Standard or Extended tier)
 
-- SAP AI Core architecture: scenarios, deployments, executions
-- The three files to change: `vertex_srv.py` → `aicore_srv.py`
-- AI Core LLM deployment for Gemini or GPT-4o
-- AI Core embedding deployment
-- BTP Destination for AI Core (replaces Vertex AI destination)
-- Side-by-side: Vertex AI vs AI Core — cost, latency, features
+- What is SAP AI Core? Generative AI Hub, managed model endpoints
+- Activating a model in AI Launchpad (resource group, deployment, inference URL)
+- Getting the AI Core service key and configuring environment variables
+- Installing `generative-ai-hub-sdk` and verifying with a direct Python call
+- Replacing `_get_llm()`: swapping Gemini for GPT-4o via AI Core
+- Replacing the embedding model: dimension warning (768 → 1536, re-ingestion required)
+- BTP Destination for AI Core (OAuth2ClientCredentials)
 - When to choose AI Core over Vertex AI in production
 
 ---
@@ -323,8 +282,8 @@ Complete walkthrough with screenshots:
 | Ch 9 — Multi-Agent Supervisor | 4,000 | 16 |
 | Ch 10 — CAP OData V4 + Fiori UI | 4,000 | 16 |
 | Ch 11 — BTP Deployment | 3,000 | 12 |
-| Appendices A-E | 6,000 | 24 |
-| **Total** | **50,000** | **200** |
+| Appendix A | 2,000 | 8 |
+| **Total** | **46,000** | **188** |
 
 ---
 
@@ -332,10 +291,10 @@ Complete walkthrough with screenshots:
 
 | Week | Chapters | Focus |
 |------|----------|-------|
-| Week 1 | Ch 1–2 + Appendix A–B | Foundations + platform setup |
+| Week 1 | Ch 1–2 | Foundations |
 | Week 2 | Ch 3–5 | Knowledge layer (code + writing) |
 | Week 3 | Ch 6–8 | LangGraph agents (code + writing) |
-| Week 4 | Ch 9–10 + Appendix C–E | Integration + publish |
+| Week 4 | Ch 9–10 + Appendix A | Integration + publish |
 
 **Daily rhythm:**
 - Morning: build the code for the chapter (2–3 hrs with Claude)

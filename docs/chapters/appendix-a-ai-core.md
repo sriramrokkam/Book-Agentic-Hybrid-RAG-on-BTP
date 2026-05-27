@@ -1,4 +1,4 @@
-# Appendix E: SAP AI Core — Enterprise LLM Integration
+# Appendix A: SAP AI Core — Enterprise LLM Integration
 
 ---
 
@@ -6,7 +6,7 @@
 
 ---
 
-## E.1 What Is SAP AI Core?
+## A.1 What Is SAP AI Core?
 
 SAP AI Core is the enterprise AI deployment and orchestration platform on SAP BTP. It provisions and runs foundation models at scale, manages model lifecycle, handles token quotas and rate limiting per tenant, and provides the secure inference endpoint that Joule uses internally.
 
@@ -21,7 +21,7 @@ The LangChain integration library `generative-ai-hub-sdk` wraps both endpoints w
 
 ---
 
-## E.2 Prerequisites
+## A.2 Prerequisites
 
 Before starting this appendix, confirm you have:
 
@@ -33,7 +33,7 @@ Before starting this appendix, confirm you have:
 
 ---
 
-## E.3 Activating a Model in AI Launchpad
+## A.3 Activating a Model in AI Launchpad
 
 AI Launchpad is the browser-based control plane for AI Core. You use it to activate (deploy) a foundation model before your application can call it.
 
@@ -79,7 +79,7 @@ https://api.ai.prod.eu-central-1.aws.ml.hana.ondemand.com/v2/inference/deploymen
 
 ---
 
-## E.4 Getting the AI Core Service Key
+## A.4 Getting the AI Core Service Key
 
 In BTP Cockpit → **Services** → **Instances** → click your AI Core instance → **Service Keys** → **Create Service Key**.
 
@@ -109,7 +109,7 @@ AICORE_DEPLOYMENT_ID=<your-deployment-id>
 
 ---
 
-## E.5 Installing the SDK
+## A.5 Installing the SDK
 
 ```bash
 pip install "generative-ai-hub-sdk[all]"
@@ -123,7 +123,7 @@ python -c "from gen_ai_hub.proxy.langchain import init_llm; print('SDK ready')"
 
 ---
 
-## E.6 Calling the Model Directly (Python)
+## A.6 Calling the Model Directly (Python)
 
 Before integrating with the agent, verify the model works standalone:
 
@@ -160,7 +160,7 @@ Embedding dimension: 1536
 
 ---
 
-## E.7 Replacing Gemini in the Agent
+## A.7 Replacing Gemini in the Agent
 
 The agent uses two Gemini calls: one for SPARQL generation (the KG chain) and one for answer synthesis (the merge node). Both use the `_get_llm()` lazy getter pattern — swapping providers requires changing only that function.
 
@@ -263,7 +263,7 @@ The response structure is identical — `answer`, `kg_facts`, `vector_chunks`, `
 
 ---
 
-## E.8 BTP Destination for AI Core (CF Deployment)
+## A.8 BTP Destination for AI Core (CF Deployment)
 
 For BTP Cloud Foundry deployment, store AI Core credentials in the Destination Service rather than as CF environment variables.
 
@@ -289,7 +289,7 @@ In `main.py`, read the destination at startup using the BTP Destination Service 
 
 ---
 
-## E.9 Summary
+## A.9 Summary
 
 | Step | What you did |
 |---|---|
