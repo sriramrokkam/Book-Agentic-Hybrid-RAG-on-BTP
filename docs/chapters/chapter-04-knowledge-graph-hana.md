@@ -63,7 +63,7 @@ For our material document use case we will use the graph mainly for the first re
 
 ![Knowledge Graph Pipeline](docs/screenshots/diagrams/05-kg-pipeline.png)
 
-*Figure 4.2 — The KG pipeline has two phases. Ingestion (top): full PDF text is passed to Gemini 2.5 Flash along with the OWL ontology as a constraint, producing RDF triples that are stored as a named graph in HANA. Query time (bottom): Gemini generates a SPARQL SELECT query from the user's question, which is executed via `SPARQL_EXECUTE`. A retry loop broadens the query if results are empty. The resulting facts are summarised by Gemini into an answer fragment.*
+*Figure 4.2 — Two variants of the Knowledge Graph ingestion pipeline. **With Ontology (top):** document chunks pass through entity and relationship extraction constrained by the OWL ontology, producing normalised RDF triples that are uploaded to HANA as a named graph. The ontology acts as a schema — it defines which entity types and predicates are valid, so Gemini's output is predictable and consistent. **Without Ontology (bottom):** the same pipeline runs without the constraint file. Gemini extracts whatever relationships it finds in the text. This is faster to set up but produces less consistent predicate names across documents. Our implementation uses the ontology variant — see `MSDS_Ontology.ttl` in the repository root.*
 
 ---
 

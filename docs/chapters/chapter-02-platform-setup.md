@@ -14,7 +14,7 @@ By the end of this chapter, you will have:
 
 This is pure setup. There is no agent code here. But every chapter that follows depends on this foundation being solid. Rushing this chapter and skipping verification steps is the most common cause of confusing errors later. Take the 45 minutes. Do it properly.
 
-> **Cost reminder:** Everything in this chapter is free. SAP BTP trial is free. GCP provides $300 credit on signup. The Vertex AI API calls in this chapter will cost cents — comfortably within the trial credit.
+> **Cost:** SAP BTP trial is free. GCP provides $300 credit on signup — the Vertex AI API calls for this entire project cost a few dollars at most. The same setup steps apply to a paid BTP account; the only difference is the account URL.
 
 ---
 
@@ -156,6 +156,8 @@ Save these:
 ---
 
 ## 2.5 Setting Up Google Cloud + Vertex AI
+
+Vertex AI is the model inference layer for this book — Gemini 2.5 Flash for LLM tasks, `text-embedding-004` for vector embeddings. We use it because it is immediately accessible with a Google account and $300 free credit, making it available to every reader regardless of SAP subscription level. The agent architecture is provider-agnostic; Appendix E shows how to swap in SAP AI Core for enterprise deployments where that is the preferred inference platform.
 
 ### Creating a GCP Account
 
@@ -369,6 +371,8 @@ cf --version
 ```
 
 For other platforms, download from the [CF CLI releases page](https://github.com/cloudfoundry/cli/releases).
+
+> **Why Cloud Foundry?** This book deploys to BTP Cloud Foundry because it is the simplest path to a running service — `cf push`, no container registry, no Kubernetes manifests. For production-grade agentic architectures requiring horizontal pod scaling, multi-agent process isolation, or A2A communication across microservices, **Kyma runtime** (BTP's managed Kubernetes environment) is the right deployment target. That is a separate book.
 
 Log in to your BTP CF environment:
 
