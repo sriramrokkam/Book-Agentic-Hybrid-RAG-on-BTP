@@ -1,6 +1,6 @@
 # Chapter 4: Knowledge Graphs on SAP HANA Cloud
 
-In Chapter 4 we built a vector store that retrieves passages of MSDS text by semantic similarity. It works beautifully when the question is fuzzy — "what precautions should I take when using acetone near a flame?" — because the answer lives in flowing prose. But the moment a user asks something precise — "what is the GHS hazard classification for acetone?" — vector search starts to wobble. The right paragraph might come back with a similarity score of 0.62, sandwiched between a chunk about storage temperature and another about regulatory disclaimers. The exact codes — H225, H319, H336 — are buried in a sentence among many other sentences.
+In Chapter 3 we built a vector store that retrieves passages of MSDS text by semantic similarity. It works beautifully when the question is fuzzy — "what precautions should I take when using acetone near a flame?" — because the answer lives in flowing prose. But the moment a user asks something precise — "what is the GHS hazard classification for acetone?" — vector search starts to wobble. The right paragraph might come back with a similarity score of 0.62, sandwiched between a chunk about storage temperature and another about regulatory disclaimers. The exact codes — H225, H319, H336 — are buried in a sentence among many other sentences.
 
 This chapter fills that gap. We are going to teach our system to remember structured facts as a graph, store them in SAP HANA Cloud, and query them with SPARQL. By the end of this chapter, the question "what are the GHS hazard codes for acetone?" will return exactly `["H225", "H319", "H336"]` — not a paragraph that mentions them, the codes themselves.
 
@@ -702,11 +702,11 @@ If your test prints `Facts found: []`, three things to check, in this order:
 
 ## 4.11 What the KG gets right that vector search cannot
 
-Now the comparison promised since Chapter 4. Run the same question through both retrievers.
+Now the comparison promised since Chapter 3. Run the same question through both retrievers.
 
 **Question:** "What are the GHS hazard codes for acetone?"
 
-**Vector search** (Chapter 4):
+**Vector search** (Chapter 3):
 
 ```python
 from srv.vector_srv import similarity_search
@@ -773,7 +773,7 @@ The investment was small — under 200 lines of Python, one Turtle file, and a s
 
 ## 4.13 Checkpoint
 
-Before moving to Chapter 6, confirm the following from the `agents/` directory:
+Before moving to Chapter 5, confirm the following from the `agents/` directory:
 
 ```bash
 python -c "from srv.kg_srv import count_triples; print(count_triples('ACETONE-TEST-001'))"

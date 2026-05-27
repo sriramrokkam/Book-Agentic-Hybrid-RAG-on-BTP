@@ -1,6 +1,6 @@
 # Appendix A — SAP BTP Trial Setup: Step-by-Step
 
-This appendix is for readers who are new to SAP Business Technology Platform. If you have worked with BTP before and already have a trial account with a running HANA Cloud instance, you can skip ahead to Chapter 3. If you are starting from scratch, follow every step here before opening Chapter 3. The main chapters assume this foundation is in place and do not repeat these instructions.
+This appendix is for readers who are new to SAP Business Technology Platform. If you have worked with BTP before and already have a trial account with a running HANA Cloud instance, you can skip ahead to Chapter 2. If you are starting from scratch, follow every step here before opening Chapter 2. The main chapters assume this foundation is in place and do not repeat these instructions.
 
 ---
 
@@ -15,7 +15,7 @@ By the time you reach the end of this appendix, you will have:
 - Your HANA connection details (host, port, user, password) ready to paste into `agents/.env`
 - The CF CLI installed and authenticated to your trial space
 
-This is the minimum you need before executing any code in Chapter 3.
+This is the minimum you need before executing any code in Chapter 2.
 
 ---
 
@@ -206,7 +206,7 @@ If you see **Failed** status, the most common cause is that the entitlement was 
 
 The `REAL_VECTOR` column type — which enables vector similarity search in HANA Cloud — is part of the HANA Cloud core engine. It is available by default in all HANA Cloud instances created from QRC2/2023 onwards, which includes all current trial instances. No separate toggle or purchase is required.
 
-There are, however, two optional features that the code in Chapter 6 (document ingestion) benefits from: **Script Server** and **Document Store**. Enable these now to avoid re-editing the instance later.
+There are, however, two optional features that the code in Chapter 5 (document ingestion) benefits from: **Script Server** and **Document Store**. Enable these now to avoid re-editing the instance later.
 
 ### Open HANA Cloud Central
 
@@ -221,19 +221,19 @@ In HANA Cloud Central, click the three-dot menu (labeled **Actions**) next to yo
 The instance edit form opens. Scroll down until you see the **Additional Features** section. You will find checkboxes for:
 
 - **Script Server** — enables server-side scripting and is required for certain built-in procedures
-- **Document Store** — adds JSON document storage and is used by some ingestion patterns in Chapter 6
+- **Document Store** — adds JSON document storage and is used by some ingestion patterns in Chapter 5
 
 Check both boxes if they are not already checked. The vector engine (`REAL_VECTOR`) is listed as a core capability in this section — confirm it shows as enabled.
 
 Click **Save**. HANA Cloud will apply the configuration change, which takes 2–3 minutes. The instance status will briefly show **Updating** and return to **Running**.
 
-> **Note on the vector engine:** If you are reading the HANA Cloud documentation and see references to "Script Server" being required for vector search in older documentation, that applied to versions prior to QRC2/2023. Current HANA Cloud trial instances support `REAL_VECTOR` natively without Script Server. Script Server is still worth enabling for the scripting features used in Chapter 6.
+> **Note on the vector engine:** If you are reading the HANA Cloud documentation and see references to "Script Server" being required for vector search in older documentation, that applied to versions prior to QRC2/2023. Current HANA Cloud trial instances support `REAL_VECTOR` natively without Script Server. Script Server is still worth enabling for the scripting features used in Chapter 5.
 
 ---
 
 ## Step 7 — Get the HANA Connection Details
 
-You now need four pieces of information from your HANA Cloud instance. These go into the `agents/.env` file in Chapter 3.
+You now need four pieces of information from your HANA Cloud instance. These go into the `agents/.env` file in Chapter 2.
 
 ### Copy the SQL Endpoint
 
@@ -269,7 +269,7 @@ Replace the placeholder values with the values specific to your instance. Do not
 
 ## Step 8 — Install the CF CLI
 
-The CF CLI (Cloud Foundry Command Line Interface) is how you deploy applications to your BTP Cloud Foundry space from your local machine. You need it in Chapter 11 when you deploy the agents to production.
+The CF CLI (Cloud Foundry Command Line Interface) is how you deploy applications to your BTP Cloud Foundry space from your local machine. You need it in Chapter 10 when you deploy the agents to production.
 
 ### Install on macOS
 
@@ -323,7 +323,7 @@ The output should show your API endpoint, org name, and the `dev` space.
 
 ## Verification Checklist
 
-Before moving to Chapter 3, confirm each of the following items. Do not skip this — a missing item here causes non-obvious errors two or three chapters later.
+Before moving to Chapter 2, confirm each of the following items. Do not skip this — a missing item here causes non-obvious errors two or three chapters later.
 
 - [ ] **BTP Cockpit login works.** You can open `cockpit.hanatrial.ondemand.com` and reach your Global Account home screen without being asked to register again.
 
@@ -337,7 +337,7 @@ Before moving to Chapter 3, confirm each of the following items. Do not skip thi
 
 - [ ] **CF CLI is authenticated.** Running `cf target` in your terminal shows the correct API endpoint, org, and `dev` space — no authentication error.
 
-All six checked? You are ready for Chapter 3.
+All six checked? You are ready for Chapter 2.
 
 ---
 

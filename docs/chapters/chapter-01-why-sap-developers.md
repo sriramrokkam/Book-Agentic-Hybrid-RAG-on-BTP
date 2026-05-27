@@ -1,6 +1,6 @@
-# Chapter 2: What Is Agentic AI — And Why SAP Developers Should Care
+# Chapter 1: What Is Agentic AI — And Why SAP Developers Should Care
 
-## 2.1 Beyond the Chatbot
+## 1.1 Beyond the Chatbot
 
 Most developers encounter AI for the first time as a chatbot. You type a question, the model replies. It is impressive, but it is fundamentally passive. The model waits for input, responds, and stops. It has no memory of what happened before, no ability to take action in the world, and no way to break a complex task into steps and execute them one by one.
 
@@ -8,9 +8,9 @@ Agentic AI changes this entirely.
 
 An AI agent is a system where a large language model (LLM) does not just respond — it **reasons, plans, and acts**. It can call tools, retrieve information from databases, invoke APIs, hand work off to other agents, and loop back to verify its own output. The agent decides what to do next based on what it has learned so far. It is not following a fixed script. It is reasoning dynamically toward a goal.
 
-This shift — from chatbot to agent — is the most important development in applied AI since the transformer architecture itself.
+This shift — from passive completion to active reasoning — is the most important development in applied AI since the transformer architecture itself. Foundation models gave us systems that could understand language; tools, memory, and planning loops give us systems that can act on it.
 
-## 2.2 The Four Capabilities That Define an Agent
+## 1.2 The Four Capabilities That Define an Agent
 
 An AI agent is defined by four capabilities that a plain LLM call does not have:
 
@@ -26,7 +26,23 @@ The agent can decompose a complex goal into sub-tasks, execute them in sequence 
 **4. Multi-Agent Collaboration**
 Complex tasks can be delegated. A supervisor agent breaks work into pieces and assigns each piece to a specialist agent — one for database queries, one for calculations, one for document retrieval. The supervisor collects results and synthesizes a final answer.
 
-## 2.3 Why This Matters for SAP Developers
+The clearest test of whether a system is genuinely agentic is this: does it demonstrate real decision-making, or is it following a static script? A workflow that always retrieves three documents, always passes them to the same prompt, and always returns the model's first response is not an agent — it is a deterministic pipeline with an LLM somewhere in the middle. An agent, by contrast, decides at runtime, based on what it sees, whether to retrieve more, whether to ask a clarifying question, or whether to stop and admit it does not know.
+
+## 1.3 The Spectrum: From Pipeline to Agent
+
+Enterprise AI systems do not fall neatly into "agent" or "not agent" — they sit on a spectrum. Understanding where your system lives helps you make deliberate architecture choices.
+
+| System Type | Adaptability | Explainability | Typical Failure Mode |
+|---|---|---|---|
+| Deterministic pipeline | None — fixed logic | High | Hard error on unexpected input |
+| Deterministic LLM workflow | Low — fixed structure, flexible model | High | Wrong but consistent |
+| RAG system | Medium — retrieval adapts to query | High | Plausible but stale |
+| **Agentic RAG (this book)** | **Medium-high — agent picks strategy at runtime** | **High** | **Honest "I don't know"** |
+| Autonomous agent | High | Lower | Confidently off-task |
+
+The system we build in this book sits deliberately in the middle of this spectrum. It is more than a fixed RAG pipeline — it makes runtime decisions about which retrieval strategy to use and how to combine the results — but it operates within a bounded domain rather than pursuing open-ended goals. For regulated enterprise work, the middle of the spectrum is where trust, cost, and capability balance.
+
+## 1.4 Why This Matters for SAP Developers
 
 SAP developers work in an ecosystem that is rich with structured data, complex business processes, and decades of accumulated knowledge locked in documents, systems, and workflows.
 
@@ -34,7 +50,7 @@ Consider what an agentic system can do in an SAP context:
 
 - A logistics manager asks: *"Which of our open deliveries are at risk of missing the SLA, and what should we do about them?"* — The agent queries SAP S/4HANA OData APIs, retrieves delivery statuses, checks route data, reasons about delays, and proposes actions.
 
-- A procurement analyst asks: *"Summarize the hazard information for all chemicals we ordered last quarter."* — The agent retrieves material safety data sheets, searches a knowledge graph for GHS classifications, cross-references a vector store of regulatory documents, and synthesizes a compliance summary.
+- A procurement analyst asks: *"Summarise the hazard information for all chemicals we ordered last quarter."* — The agent retrieves material safety data sheets, searches a knowledge graph for GHS classifications, cross-references a vector store of regulatory documents, and synthesises a compliance summary.
 
 - A developer asks: *"What CAP annotations do I need to add to expose this entity as a Fiori list report?"* — The agent searches internal documentation, reads the CDS schema, and generates the exact annotations needed.
 
@@ -73,9 +89,7 @@ SAP is not building its AI strategy alone. The company announced a broad coaliti
 | **Mistral AI & Cohere** | European AI model options within the platform |
 | **Palantir** | Enterprise data and AI operations |
 
-The NVIDIA partnership deserves particular attention. NVIDIA's strength is not just GPUs — it is the full stack from hardware through software frameworks (CUDA, NIM microservices) to the runtime environment for deploying and securing agents at scale. By embedding NVIDIA OpenShell into Joule Studio, SAP gives enterprise customers a hardened, auditable execution environment for agents that touch mission-critical processes. This is not a marketing partnership — it is a direct response to enterprise concerns about agent reliability and security, themes that Albada covers extensively in *Building Applications with AI Agents* (Chapter 12: Protecting Agentic Systems).
-
-SAP also announced acquisitions that signal the depth of its AI commitment. In May 2026, SAP announced plans to acquire **Prior Labs** — a frontier AI research lab based in Europe — with the explicit goal of establishing a "globally leading frontier AI lab" within the company. This follows the acquisition of **Reltio**, a master data management platform, in the same period. Together, these moves signal that SAP intends to control the AI stack from the data layer (Reltio) through the model layer (Prior Labs) to the application layer (Autonomous Suite).
+SAP also announced acquisitions that signal the depth of its AI commitment. In May 2026, SAP announced plans to acquire **Prior Labs** — a frontier AI research lab based in Europe — with the explicit goal of establishing a "globally leading frontier AI lab" within the company. This follows the acquisition of **Reltio**, a master data management platform. Together, these moves signal that SAP intends to control the AI stack from the data layer through the model layer to the application layer.
 
 ### What This Means for You as a Developer
 
@@ -85,7 +99,7 @@ The architecture in this book — agents orchestrated with LangGraph, vector sea
 
 The 200+ agents SAP announced at Sapphire 2026 were not built by SAP alone. Partners, customers, and developers on BTP built them. This book shows you how to be one of those builders.
 
-## 2.4 What We Build in This Book
+## 1.5 What We Build in This Book
 
 This book builds a single, coherent, production-grade system called the **Hybrid RAG Agent**. It runs on SAP BTP (free trial) and uses Google Vertex AI for LLM and embedding capabilities.
 
@@ -95,11 +109,15 @@ The system answers questions about documents by combining two retrieval strategi
 
 **Knowledge Graph Search** finds structured facts. When you ask *"What is the GHS hazard code for acetone?"*, the knowledge graph returns a precise, structured answer via a SPARQL query — no ambiguity, no hallucination.
 
-A LangGraph orchestrator runs both searches in parallel, merges the results, and synthesizes a final answer using Gemini 2.5 Flash. The system is exposed via a CAP Node.js OData V4 API with a Fiori Elements UI, and optionally extended to Joule A2A for enterprise SAP copilot integration.
+This hybrid approach exists because neither retrieval strategy alone is sufficient. Vector search is forgiving and handles narrative prose beautifully, but it wobbles on precise symbolic facts — asked for the GHS code for acetone, it might return the right paragraph at 0.65 cosine similarity sandwiched between unrelated chunks. Knowledge graphs answer symbolic queries precisely, but they cannot handle narrative questions that have no single structured answer. Run both in parallel, synthesise when both return, defer to whichever returns when only one does, and admit ignorance when neither does. That is the architecture we build.
+
+The running example throughout the book is a domain-specific agent for **Material Safety Data Sheets (MSDS)** — the regulatory documents that govern how chemical substances are handled, stored, transported, and disposed of. MSDS documents are an ideal example for hybrid RAG because they contain both kinds of content in equal measure: dense narrative prose on one page (first-aid procedures, ventilation requirements) and precise structured data on the next (GHS hazard codes, exposure limits, flash points). A real user — say, a safety officer on a shop floor — asks questions about both, often in the same sentence.
+
+A LangGraph orchestrator runs both searches in parallel, merges the results, and synthesises a final answer using Gemini 2.5 Flash. The system is exposed via a CAP Node.js OData V4 API with a Fiori Elements UI, and optionally extended to Joule A2A for enterprise SAP copilot integration.
 
 ![Agentic Hybrid RAG System Architecture](docs/screenshots/diagrams/02-agentic-rag-overview.png)
 
-*Figure 2.1 — The Hybrid RAG Agent: user questions enter a FastAPI backend, which fans out to a Vector Chain (HANA REAL_VECTOR + cosine search) and a KG Chain (HANA SPARQL/RDF) running in parallel. Both results feed into Gemini 2.5 Flash for synthesis into a final cited answer.*
+*Figure 1.1 — The Hybrid RAG Agent: user questions enter a FastAPI backend, which fans out to a Vector Chain (HANA REAL_VECTOR + cosine search) and a KG Chain (HANA SPARQL/RDF) running in parallel. Both results feed into Gemini 2.5 Flash for synthesis into a final cited answer.*
 
 By the time you finish this book, you will have built a fully working system that:
 
@@ -110,40 +128,42 @@ By the time you finish this book, you will have built a fully working system tha
 - Calls Google Vertex AI for embeddings and LLM inference
 - Exposes everything via CAP OData V4 with a Fiori Elements UI running locally
 
+The architecture, the patterns, and the engineering choices we make along the way generalise far beyond MSDS. Substitute legal contracts and you have the skeleton of a legal agent. Substitute clinical guidelines and you have something close to a medical AI assistant. Substitute equipment maintenance manuals and you have a field-service agent. The domain changes. The pattern does not.
+
 ---
 
-## 2.5 Scope of This Book
+## 1.6 Scope of This Book
 
-Before going further, it is important to be explicit about what this book covers and what it deliberately leaves out. Knowing the boundaries upfront will save confusion later.
+Before going further, it is important to be explicit about what this book covers and what it deliberately leaves out.
 
 ### What This Book Covers
 
 | Topic | Coverage |
 |-------|----------|
-| Agentic AI concepts — tool use, memory, planning, multi-agent | Full coverage, Ch 1–2 |
-| SAP BTP trial setup — HANA Cloud, CF space, Destination Service | Full coverage, Ch 3 |
-| Vector search on HANA Cloud (REAL_VECTOR) | Full coverage, Ch 4 |
-| Knowledge graphs on HANA Cloud (SPARQL/RDF) | Full coverage, Ch 5 |
-| PDF ingestion pipeline — dual-threaded KG + vector | Full coverage, Ch 6 |
-| LangGraph — state, nodes, edges, conditional routing | Full coverage, Ch 7 |
-| Hybrid RAG agent — parallel chains, merge, orchestrator | Full coverage, Ch 8 |
-| Multi-agent supervisor pattern — specialist agents | Full coverage, Ch 9 |
-| CAP Node.js OData V4 service + Fiori Elements UI | Full coverage, Ch 10 |
-| Deploying to SAP BTP Cloud Foundry | Full coverage, Ch 11 |
+| Agentic AI concepts — tool use, memory, planning, multi-agent | Full coverage, Ch 1 |
+| SAP BTP trial setup — HANA Cloud, CF space, Destination Service | Full coverage, Ch 2 |
+| Vector search on HANA Cloud (REAL_VECTOR) | Full coverage, Ch 3 |
+| Knowledge graphs on HANA Cloud (SPARQL/RDF) | Full coverage, Ch 4 |
+| PDF ingestion pipeline — dual-threaded KG + vector | Full coverage, Ch 5 |
+| LangGraph — state, nodes, edges, conditional routing | Full coverage, Ch 6 |
+| Hybrid RAG agent — parallel chains, merge, orchestrator | Full coverage, Ch 7 |
+| Multi-agent supervisor pattern — specialist agents | Full coverage, Ch 8 |
+| CAP Node.js OData V4 service + Fiori Elements UI | Full coverage, Ch 9 |
+| Deploying to SAP BTP Cloud Foundry | Full coverage, Ch 10 |
 | Joule A2A integration | Appendix D (enterprise only) |
 | SAP AI Core as LLM alternative | Appendix E (enterprise only) |
 
 ### What This Book Does NOT Cover
 
-**Production-grade hardening.** This book teaches the architecture and implementation patterns. It does not cover production concerns such as rate limiting, multi-tenant isolation, secrets rotation, disaster recovery, or SLA monitoring. Those topics belong in an operations guide, not a developer learning book.
+**Production-grade hardening.** This book teaches the architecture and implementation patterns. It does not cover rate limiting, multi-tenant isolation, secrets rotation, disaster recovery, or SLA monitoring.
 
-**Fine-tuning or training models.** All LLM usage in this book is inference-only — calling hosted models via API. We do not fine-tune Gemini, train embeddings, or modify model weights.
+**Fine-tuning or training models.** All LLM usage in this book is inference-only — calling hosted models via API.
 
-**Multi-document cross-referencing.** The hybrid RAG agent in this book answers questions about one MSDS document at a time (targeted by material number). Cross-document reasoning is a natural extension but is not covered here.
+**Multi-document cross-referencing.** The hybrid RAG agent answers questions about one MSDS document at a time. Cross-document reasoning is a natural extension but is not covered here.
 
-**Streaming responses.** The agent returns complete answers synchronously. Streaming token-by-token output to the Fiori UI is a worthwhile enhancement but adds significant frontend complexity that would dilute the core learning objectives.
+**Streaming responses.** The agent returns complete answers synchronously.
 
-**CI/CD pipelines.** Deployment in Chapter 11 uses manual `cf push` and `mbt build && cf deploy` commands. Automating these through GitHub Actions or SAP CI/CD Service is not covered.
+**CI/CD pipelines.** Deployment in Chapter 10 uses manual `cf push` and `mbt build && cf deploy` commands.
 
 **Joule and SAP AI Core on free trial.** Both require enterprise SAP subscriptions. They are covered in Appendices D and E specifically so readers with enterprise access can follow along, while the main chapters remain accessible to anyone on the free trial.
 
@@ -156,13 +176,13 @@ Most chapters in this book develop and test everything on your **local machine**
 - Your local HANA Cloud trial instance (which is cloud-hosted but accessed from your laptop)
 - The Vertex AI API called directly from your local Python environment
 
-Chapter 11 then shows you how to deploy this same code — unchanged — to BTP Cloud Foundry. The local and deployed architectures are identical; only the credential source and the runtime environment change.
+Chapter 10 then shows you how to deploy this same code — unchanged — to BTP Cloud Foundry.
 
-> **Note:** You do not need to complete Chapter 11 to have a working system. Chapters 1–10 produce a fully functional Hybrid RAG Agent running locally against your BTP HANA Cloud trial. Chapter 11 is the production deployment step.
+> **Note:** You do not need to complete Chapter 10 to have a working system. Chapters 1–9 produce a fully functional Hybrid RAG Agent running locally against your BTP HANA Cloud trial. Chapter 10 is the production deployment step.
 
 ---
 
-## 2.6 The Platform Choice: SAP BTP + Google Vertex AI
+## 1.7 The Platform Choice: SAP BTP + Google Vertex AI
 
 A recurring question in enterprise AI projects is: which platform? This book makes a deliberate, practical choice.
 
@@ -170,16 +190,16 @@ A recurring question in enterprise AI projects is: which platform? This book mak
 - SAP HANA Cloud — the only database that combines vector search and SPARQL knowledge graph storage in a single managed service
 - Cloud Foundry runtime — free for developers, the same runtime used in production
 - CAP Node.js — the standard for building SAP-native OData APIs
-- Destination Service — secure, centralized credential management for external APIs
+- Destination Service — secure, centralised credential management for external APIs
 
 **Google Vertex AI** is the AI inference layer. It provides:
 - Gemini 2.5 Flash — one of the best price-performance LLMs available today
 - text-embedding-004 — state-of-the-art embeddings for semantic search
 - $300 free trial credit — enough to build and test everything in this book at zero cost
 
-SAP AI Core is deliberately excluded from the main examples. It is a viable alternative for organizations that require all components on BTP, but it is a paid service that is not available on the free trial. We mention it where relevant and the architecture is designed so that swapping Vertex AI for AI Core requires changing only the LLM client — nothing else.
+SAP AI Core is deliberately excluded from the main examples. It is a viable alternative for organisations that require all components on BTP, but it is a paid service not available on the free trial. The architecture is designed so that swapping Vertex AI for AI Core requires changing only the LLM client — nothing else.
 
-## 2.7 What You Need to Follow Along
+## 1.8 What You Need to Follow Along
 
 To build everything in this book you need:
 
@@ -195,16 +215,16 @@ To build everything in this book you need:
 | CDS CLI (`@sap/cds`) | npm | Free |
 | VS Code | code.visualstudio.com | Free |
 
-Chapter 3 walks through every setup step with screenshots. If you already have a BTP trial and a GCP account, Chapter 3 will take about 30 minutes.
+Chapter 2 walks through every setup step with screenshots. If you already have a BTP trial and a GCP account, Chapter 2 will take about 30 minutes.
 
-## 2.8 Summary
+## 1.9 Summary
 
-- Agentic AI extends LLMs with tool use, memory, planning, and multi-agent collaboration
-- SAP developers have a unique opportunity — rich enterprise data, complex processes, and a platform (BTP) purpose-built for hybrid AI architectures
+- Agentic AI extends LLMs with tool use, memory, planning, and multi-agent collaboration — transforming passive completion into active reasoning
+- The spectrum runs from deterministic pipelines through RAG to fully autonomous agents; this book builds in the middle, at "Agentic RAG"
+- SAP developers have a unique opportunity: rich enterprise data, complex processes, and a platform (BTP) purpose-built for hybrid AI architectures
 - SAP itself is betting on domain-specific agents: 200+ specialist agents announced at Sapphire 2026, the Autonomous Enterprise vision, and the Joule Studio development environment
-- This book builds a Hybrid RAG Agent: vector search + knowledge graph + LangGraph orchestration on SAP BTP
+- Hybrid retrieval is the right engine for domain-specific enterprise agents — vector search handles narrative questions, knowledge graphs handle precise symbolic facts; neither alone is sufficient
+- This book builds a Hybrid RAG Agent: vector search + knowledge graph + LangGraph orchestration on SAP BTP, demonstrated through an MSDS safety data sheet assistant
 - The full stack is free to build and test using BTP trial + GCP free credit
-- SAP AI Core is not required — Vertex AI is called as an external API from BTP Cloud Foundry
-- Local development is the primary mode — Chapter 11 handles deployment once the system is working
 
-In Chapter 3, we set up the platform — BTP trial, HANA Cloud, GCP project, and Vertex AI credentials — so you have a working environment before we write a single line of code.
+In Chapter 2, we set up the platform — BTP trial, HANA Cloud, GCP project, and Vertex AI credentials — so you have a working environment before we write a single line of code.

@@ -1,6 +1,6 @@
-# Chapter 3: Platform Setup — SAP BTP Trial + Google Vertex AI
+# Chapter 2: Platform Setup — SAP BTP Trial + Google Vertex AI
 
-## 3.1 The Goal of This Chapter
+## 2.1 The Goal of This Chapter
 
 Before we write a single line of agent code, we need a working environment. This chapter gets you there.
 
@@ -18,7 +18,7 @@ This is pure setup. There is no agent code here. But every chapter that follows 
 
 ---
 
-## 3.2 Understanding What We Are Setting Up
+## 2.2 Understanding What We Are Setting Up
 
 Before clicking through consoles, it helps to understand the shape of what we are building.
 
@@ -62,7 +62,7 @@ With this picture in mind, let us set it up.
 
 ---
 
-## 3.3 SAP BTP Trial Account
+## 2.3 SAP BTP Trial Account
 
 ### Signing Up
 
@@ -101,7 +101,7 @@ Click **Cloud Foundry** → **Spaces**. You should see a space called "dev." Thi
 
 ---
 
-## 3.4 Provisioning SAP HANA Cloud
+## 2.4 Provisioning SAP HANA Cloud
 
 HANA Cloud is provisioned from the BTP Cockpit. This is a one-time setup that takes about 10–15 minutes.
 
@@ -161,7 +161,7 @@ Save these:
 
 ---
 
-## 3.5 Setting Up Google Cloud + Vertex AI
+## 2.5 Setting Up Google Cloud + Vertex AI
 
 ### Creating a GCP Account
 
@@ -260,7 +260,7 @@ Save the file as `gcp-sa-key.json` in a secure location outside your project dir
 
 ---
 
-## 3.6 Configuring the BTP Destination Service
+## 2.6 Configuring the BTP Destination Service
 
 The BTP Destination Service is the secure credential store that connects your BTP applications to external services. Your FastAPI agent will read the Vertex AI credentials from this destination at runtime — the JSON key never lives in application code or in `manifest.yml`.
 
@@ -302,7 +302,7 @@ Click **Save**, then click **Check Connection**. You should see a green "200 OK"
 
 ---
 
-## 3.7 Local Development Environment
+## 2.7 Local Development Environment
 
 Now set up your local machine. We need Python, Node.js, the CF CLI, the CDS CLI, and VS Code.
 
@@ -399,7 +399,7 @@ Open VS Code and install these extensions:
 
 ---
 
-## 3.8 Project Setup
+## 2.8 Project Setup
 
 Clone the companion repository and set up the Python environment for the agent service:
 
@@ -452,11 +452,11 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/gcp-sa-key.json
 BACKEND_URL=http://localhost:8000
 ```
 
-> **Note:** The `GOOGLE_APPLICATION_CREDENTIALS` environment variable is only used for local development. When deployed to BTP Cloud Foundry, the agent reads credentials from the Destination Service instead. We will see this credential-switching logic in Chapter 10.
+> **Note:** The `GOOGLE_APPLICATION_CREDENTIALS` environment variable is only used for local development. When deployed to BTP Cloud Foundry, the agent reads credentials from the Destination Service instead. We will see this credential-switching logic in Chapter 9.
 
 ---
 
-## 3.9 Verifying the Setup: Your First Gemini API Call
+## 2.9 Verifying the Setup: Your First Gemini API Call
 
 Let us verify that everything works end-to-end. We will call Gemini 2.5 Flash directly and confirm we get a response.
 
@@ -556,11 +556,11 @@ Embedding dimension: 768
 First 5 values: [0.031, -0.038, 0.022, 0.054, -0.011]
 ```
 
-> **Note:** The dimension 768 is important. When we create the HANA Cloud vector table in Chapter 3, we will define the column as `REAL_VECTOR(768)`. If you switch embedding models later, you must recreate the table — the dimension is fixed at table creation time.
+> **Note:** The dimension 768 is important. When we create the HANA Cloud vector table in Chapter 2, we will define the column as `REAL_VECTOR(768)`. If you switch embedding models later, you must recreate the table — the dimension is fixed at table creation time.
 
 ---
 
-## 3.10 Verifying the HANA Cloud Connection
+## 2.10 Verifying the HANA Cloud Connection
 
 Run a quick connectivity test to confirm HANA Cloud is reachable:
 
@@ -624,7 +624,7 @@ HANA connection: OK
 
 ---
 
-## 3.11 What We Have Built
+## 2.11 What We Have Built
 
 Let us take stock of what is now in place:
 
@@ -647,9 +647,9 @@ The architecture you set up here mirrors how SAP customers deploy AI at scale �
 
 ---
 
-## 3.12 Understanding the Credential Flow
+## 2.12 Understanding the Credential Flow
 
-Before we move on, it is worth understanding exactly how credentials flow through the system. This will matter in Chapter 10 when you deploy to BTP, and it is a pattern that comes up repeatedly in enterprise AI systems.
+Before we move on, it is worth understanding exactly how credentials flow through the system. This will matter in Chapter 9 when you deploy to BTP, and it is a pattern that comes up repeatedly in enterprise AI systems.
 
 ```
 Local development:
@@ -666,11 +666,11 @@ BTP Cloud Foundry deployment:
 
 The key insight is that **the application code never changes** between local and deployed. The credential source changes — `.env` locally, Destination Service in production — but the interface that `vertex_srv.py` exposes to the rest of the system is identical. This is the modularity principle in practice.
 
-We will build `vertex_srv.py` in Chapter 3. For now, knowing the pattern exists is enough.
+We will build `vertex_srv.py` in Chapter 2. For now, knowing the pattern exists is enough.
 
 ---
 
-## 3.13 Summary
+## 2.13 Summary
 
 - SAP BTP trial provides free Cloud Foundry runtime and HANA Cloud — the only database that combines vector search and SPARQL knowledge graph in one service
 - Google Vertex AI is an external HTTPS API — no GPU management, no model hosting, just an API call from BTP CF

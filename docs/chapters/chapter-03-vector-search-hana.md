@@ -46,7 +46,7 @@ These operators are SIMD-accelerated on the HANA engine, which means a single CP
 
 > **Tip:** For embeddings produced by Google, OpenAI, and Cohere — all of which are L2-normalized at the API boundary — `COSINE_SIMILARITY` is the right choice. Use `L2DISTANCE` only if you are working with embeddings that are not normalized.
 
-A second feature worth knowing about (we will not use it in this chapter, but it matters at scale) is the **HNSW index**. Without an index, every similarity query scans the entire table. With an HNSW index, HANA builds a graph structure that gets you approximate-nearest-neighbor results in logarithmic time. For our chapter you will not need it — five MSDS chunks search in under 10 ms — but for production deployments with millions of chunks, indexing is essential. We come back to this in Chapter 9 when we tune for production.
+A second feature worth knowing about (we will not use it in this chapter, but it matters at scale) is the **HNSW index**. Without an index, every similarity query scans the entire table. With an HNSW index, HANA builds a graph structure that gets you approximate-nearest-neighbor results in logarithmic time. For our chapter you will not need it — five MSDS chunks search in under 10 ms — but for production deployments with millions of chunks, indexing is essential. We come back to this in Chapter 10 when we tune for production.
 
 ![HANA Cloud Central](docs/screenshots/hana/04-hana-central.png)
 *Figure: SAP HANA Cloud Central — the REAL_VECTOR column type is available in all HANA Cloud instances from version 4.0 onwards*
@@ -165,7 +165,7 @@ The pattern here mirrors the lazy table creation pattern. `vertexai.init()` is g
 
 `embed_text()` is the function the rest of our application uses. It takes a string and returns a Python list of 768 floats. Internally, the SDK takes a list of strings, so we pass `[text]` and unwrap the first result with `embeddings[0].values`.
 
-> **Note:** Vertex AI's embedding endpoint accepts batches of up to 250 texts per call. For a one-off MSDS upload that ends up with maybe 30 chunks, the savings of batching are negligible compared to the simplicity of one-text-per-call. We will revisit batching in Chapter 9 when we look at bulk-loading historical documents.
+> **Note:** Vertex AI's embedding endpoint accepts batches of up to 250 texts per call. For a one-off MSDS upload that ends up with maybe 30 chunks, the savings of batching are negligible compared to the simplicity of one-text-per-call. We will revisit batching in Chapter 10 when we look at bulk-loading historical documents.
 
 You should also be aware that Vertex AI charges per 1,000 input characters for embeddings (about $0.000025 per 1,000 chars at the time of writing). A typical 12-page MSDS PDF has roughly 30,000 characters and chunks into ~30 pieces. The cost to embed it is approximately $0.0008 — less than a tenth of a cent. Search-time embeddings (one per question) are equally cheap.
 
@@ -203,7 +203,7 @@ A few engineering notes:
 
 - We pass `material_number`, `chunk_text`, `chunk_index`, and the embedding string as positional parameters. This is parameterized SQL — no concatenation of user data into the query, so SQL injection is impossible.
 - `_ensure_table(len(embedding))` runs on every call but exits early after the first invocation thanks to the `_table_created` flag.
-- We commit per insert. For uploading a single MSDS this is fine. For bulk uploads, batch your inserts and commit once at the end — Chapter 9 covers this.
+- We commit per insert. For uploading a single MSDS this is fine. For bulk uploads, batch your inserts and commit once at the end — Chapter 10 covers this.
 
 > **Tip:** If you want to verify what got stored, the SAP HANA Database Explorer is your friend. Open the `MSDS_VECTORS` table, click "Open Data", and you will see your rows. The `EMBEDDING` column displays as a truncated array preview, but you can click into a cell to see the full 768 values.
 
@@ -227,7 +227,7 @@ ORDER BY SCORE DESC;
 
 Five clauses, each doing real work. Let's read them in execution order.
 
-**`WHERE MATERIAL_NUMBER = ?`** filters the table to chunks belonging to a specific material. Without this, our search would compete across every chunk of every document in the table — fine when you have one MSDS, fatal when you have ten thousand. By filtering early, HANA scans only the rows that could possibly match. This is the one place in the query where the optimizer can use a B-tree index, so make sure you have one on `MATERIAL_NUMBER` once you go to production. (We add it in Chapter 9.)
+**`WHERE MATERIAL_NUMBER = ?`** filters the table to chunks belonging to a specific material. Without this, our search would compete across every chunk of every document in the table — fine when you have one MSDS, fatal when you have ten thousand. By filtering early, HANA scans only the rows that could possibly match. This is the one place in the query where the optimizer can use a B-tree index, so make sure you have one on `MATERIAL_NUMBER` once you go to production. (We add it in Chapter 10.)
 
 **`COSINE_SIMILARITY(EMBEDDING, TO_REAL_VECTOR(?))`** is the per-row computation. For each row passing the `WHERE` filter, HANA takes the stored `EMBEDDING` vector, the question's vector (parsed from the bound parameter), and computes the cosine of the angle between them. The result is a `DOUBLE` between roughly 0.0 and 1.0 — higher means more similar. This is where the SIMD acceleration earns its keep.
 
@@ -388,7 +388,7 @@ The module exposes four functions to the rest of the application:
 
 There is no `update_embedding` — for chunked documents, the right pattern is delete-then-reinsert. If you change the chunking algorithm, the chunk indices change, so partial updates are dangerous. Treat each upload as a fresh load.
 
-> **Note:** The connection comes from `hdb_srv.py`, which uses thread-local storage to give each request thread its own HANA connection. `hdbcli` connections are not safe to share across threads, but they are cheap to create. Thread-locals give us per-thread reuse without any cross-thread contention. We covered this pattern briefly in Chapter 2 — the file is reproduced for completeness:
+> **Note:** The connection comes from `hdb_srv.py`, which uses thread-local storage to give each request thread its own HANA connection. `hdbcli` connections are not safe to share across threads, but they are cheap to create. Thread-locals give us per-thread reuse without any cross-thread contention. We covered this pattern briefly in Chapter 1 — the file is reproduced for completeness:
 
 ```python
 import os
@@ -413,7 +413,7 @@ def get_connection():
     return _local.conn
 ```
 
-> **Warning:** `sslValidateCertificate=False` is fine for development against the BTP-issued HANA endpoint. For production you should provide the correct certificate via `sslTrustStore` and set `sslValidateCertificate=True`. We will tighten this in Chapter 10.
+> **Warning:** `sslValidateCertificate=False` is fine for development against the BTP-issued HANA endpoint. For production you should provide the correct certificate via `sslTrustStore` and set `sslValidateCertificate=True`. We will tighten this in Chapter 9.
 
 ---
 
@@ -555,7 +555,7 @@ The good news: SAP customers running on HANA have always thought in structured t
 
 That is the bridge into Chapter 4. We will take the same MSDS document, extract its structured facts (material number, hazard codes, GHS categories, regulatory codes) into RDF triples, store them in HANA's graph engine, and query them with SPARQL. When the user asks "What is the GHS hazard code for acetone?", we will return "H225" with full confidence — not by guessing from a 0.65 cosine similarity, but by traversing a graph relationship.
 
-The full Hybrid RAG agent in Chapter 6 runs both retrievers in parallel and lets a routing classifier decide which answer to trust. Vector search owns the fuzzy questions. The knowledge graph owns the precise ones. Neither is sufficient alone; together they cover the question space MSDS users actually ask.
+The full Hybrid RAG agent in Chapter 7 runs both retrievers in parallel and lets a routing classifier decide which answer to trust. Vector search owns the fuzzy questions. The knowledge graph owns the precise ones. Neither is sufficient alone; together they cover the question space MSDS users actually ask.
 
 ---
 

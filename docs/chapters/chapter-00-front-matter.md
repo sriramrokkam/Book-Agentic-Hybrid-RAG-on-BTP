@@ -1,13 +1,13 @@
 # Front Matter
 ## Agentic Hybrid RAG on SAP BTP
-### A Hands-On Guide with LangGraph, HANA Cloud, and Google Vertex AI
+### A Hands-On Guide with LangGraph, HANA Cloud, and Vertex AI 
 
 ---
 
 ## Title Page
 
 **Agentic Hybrid RAG on SAP BTP**
-*A Hands-On Guide with LangGraph, HANA Cloud, and Google Vertex AI*
+*A Hands-On Guide with LangGraph, HANA Cloud, and Vertex AI*
 
 Author: Sriram Rokkam
 
@@ -125,7 +125,7 @@ This book is not the right fit if you are:
 - **An ABAP developer with no Python experience.**
   The agent layer is written in Python. You do not need to be an expert,
   but you should be comfortable reading and writing basic Python functions,
-  classes, and pip packages before starting Chapter 3.
+  classes, and pip packages before starting Chapter 2.
 
 - **Looking for a no-code or low-code AI solution.**
   We write real code throughout. Every component is built from first
@@ -254,7 +254,7 @@ chapter without searching the repository.
 ### Reading Cover to Cover (Recommended)
 
 Each chapter builds directly on the previous one. The system grows
-chapter by chapter — by Chapter 10 you have a fully deployed, working
+chapter by chapter — by Chapter 9 you have a fully deployed, working
 Hybrid RAG Agent on SAP BTP. Reading linearly gives you the full
 progression from concept to production.
 

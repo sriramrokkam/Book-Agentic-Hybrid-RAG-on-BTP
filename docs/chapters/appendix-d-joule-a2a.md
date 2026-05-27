@@ -10,7 +10,7 @@
 
 ---
 
-Throughout this book we have built the intelligence layer: a Python FastAPI service that orchestrates a LangGraph hybrid RAG agent, stores knowledge in SAP HANA Cloud, and returns accurate answers about Material Safety Data Sheets. In Chapter 10 we gave that agent a Fiori Elements front-end. This appendix adds a third access channel: SAP Joule, the AI assistant embedded directly in S/4HANA and SuccessFactors.
+Throughout this book we have built the intelligence layer: a Python FastAPI service that orchestrates a LangGraph hybrid RAG agent, stores knowledge in SAP HANA Cloud, and returns accurate answers about Material Safety Data Sheets. In Chapter 9 we gave that agent a Fiori Elements front-end. This appendix adds a third access channel: SAP Joule, the AI assistant embedded directly in S/4HANA and SuccessFactors.
 
 The value is significant. A procurement specialist in S/4HANA who is looking at a purchase order for Acetone can ask Joule "what are the PPE requirements for this material?" without leaving their context. Joule routes that question to our hybrid RAG agent, which queries the knowledge graph and vector store, and returns the answer inside the Joule chat panel. The user never opens a separate application.
 
@@ -359,7 +359,7 @@ The response uses the flat format in both cases, since Joule 1.x is the primary 
 
 Joule imposes a hard 15-second timeout on A2A requests, as declared in the function YAML (`timeout: 15`). Any response that arrives after 15 seconds is silently discarded. The user sees nothing, which is a poor experience.
 
-The hybrid RAG agent in Chapter 8 runs the knowledge graph chain and the vector chain in parallel using `asyncio.gather`. On a cold start — first request after the service has been idle — this typically takes 4 to 6 seconds including the Gemini LLM call. On a warm service it runs in 2 to 4 seconds. This is comfortably within 15 seconds under normal conditions.
+The hybrid RAG agent in Chapter 7 runs the knowledge graph chain and the vector chain in parallel using `asyncio.gather`. On a cold start — first request after the service has been idle — this typically takes 4 to 6 seconds including the Gemini LLM call. On a warm service it runs in 2 to 4 seconds. This is comfortably within 15 seconds under normal conditions.
 
 The cases that can exceed 15 seconds are:
 
@@ -586,7 +586,7 @@ joule/
 
 The `.daar` package file (`com.sap.msds_msds_kg_agent_2.0.0-SNAPSHOT.daar`) is not committed to the repository because it is a build artifact. Generate it from the source files using the `zip` command in section D.8 whenever you need to deploy.
 
-The `/a2a` endpoint implementation belongs in `agents/main.py` alongside the other FastAPI endpoints. It follows the same pattern as the `/query` endpoint from Chapter 8, with the dual-format request parsing and the flat-format response described in section D.6.
+The `/a2a` endpoint implementation belongs in `agents/main.py` alongside the other FastAPI endpoints. It follows the same pattern as the `/query` endpoint from Chapter 7, with the dual-format request parsing and the flat-format response described in section D.6.
 
 ---
 

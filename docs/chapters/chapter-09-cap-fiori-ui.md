@@ -1,12 +1,12 @@
-# Chapter 10: CAP Node.js OData V4 — The SAP-Native API Layer + Fiori Elements UI
+# Chapter 9: CAP Node.js OData V4 — The SAP-Native API Layer + Fiori Elements UI
 
-In Chapters 8 and 9 we built a working intelligence engine: a Python FastAPI service that receives a question, dispatches it to parallel retrieval chains, and returns an answer. That engine runs on port 8000, accepts JSON over HTTP, and has no user interface. For a prototype shared among engineers that is fine. For a system that needs to be operated, monitored, and used by business users in an SAP environment, it is not enough.
+In Chapters 7 and 8 we built a working intelligence engine: a Python FastAPI service that receives a question, dispatches it to parallel retrieval chains, and returns an answer. That engine runs on port 8000, accepts JSON over HTTP, and has no user interface. For a prototype shared among engineers that is fine. For a system that needs to be operated, monitored, and used by business users in an SAP environment, it is not enough.
 
 This chapter adds the SAP-native layer. We build a CAP Node.js service that exposes our hybrid RAG agent as a standard OData V4 API, and a Fiori Elements UI that is generated automatically from CDS annotations — no custom JavaScript UI code required. By the end of this chapter you will have a complete, deployable front-end: a list report that shows all uploaded material safety documents with their processing status, an object page with action buttons to process files and run queries, and an integrated chat interface that calls the hybrid RAG agent and returns answers with the retrieval path used.
 
 ---
 
-## 10.1 Why CAP?
+## 9.1 Why CAP?
 
 Before writing a single line of code, it is worth understanding why CAP is the right choice for this layer rather than a simple Express server or a Next.js front-end.
 
@@ -22,7 +22,7 @@ The key decision in this architecture is what CAP does *not* do: it does not run
 
 ---
 
-## 10.2 The two-process architecture
+## 9.2 The two-process architecture
 
 Understanding that CAP and FastAPI are separate processes is the most important architectural concept in this chapter. Many developers assume that because a CAP service can call external APIs, the agent logic should be imported into the Node.js process. That assumption leads to a tightly coupled system that is difficult to test, impossible to scale independently, and requires Node.js developers to maintain Python code.
 
@@ -52,7 +52,7 @@ This separation has three practical benefits. First, you can develop and test ea
 
 ---
 
-## 10.3 The CDS data model
+## 9.3 The CDS data model
 
 The data model lives in `db/schema.cds`. It defines two entities and a status type.
 
@@ -100,7 +100,7 @@ The `attachments` field on `Files` is a `Composition of many FileAttachments`. C
 
 ---
 
-## 10.4 The service definition
+## 9.4 The service definition
 
 The service is defined in `srv/service.cds`. This file does three things: it projects the data model entities into the service, it adds virtual fields for UI display, and it declares the actions and functions that map to agent operations.
 
@@ -147,7 +147,7 @@ The `@(Common.IsActionCritical: true)` annotation on `deleteFile` tells Fiori El
 
 ---
 
-## 10.5 The callBackend helper
+## 9.5 The callBackend helper
 
 Every handler in `srv/service.js` that needs to communicate with the Python agent uses the same `callBackend` helper function. This centralisation matters: the URL of the backend, the authentication headers, the error handling, and the timeout configuration all live in one place.
 
@@ -173,7 +173,7 @@ Axios is used here rather than the native Node.js `fetch` because `form-data` in
 
 ---
 
-## 10.6 Action handlers
+## 9.6 Action handlers
 
 ### processFile
 
@@ -311,7 +311,7 @@ The handler does two things: it returns the live status to the caller, and it wr
 
 ---
 
-## 10.7 Fiori Elements UI
+## 9.7 Fiori Elements UI
 
 Fiori Elements is a metadata-driven UI framework. Instead of writing a React or SAPUI5 application that fetches OData and renders HTML, you write CDS annotations that describe *what* your data means and *how* you want it presented. The framework reads the OData metadata document (which CDS generates from your service definition) and the annotation document, and assembles the UI at runtime.
 
@@ -329,7 +329,7 @@ All of this is generated from the CDS service definition and the annotations in 
 
 ---
 
-## 10.8 Annotations explained
+## 9.8 Annotations explained
 
 The annotations file `srv/annotations.cds` is where the UI is configured. It is separate from the service definition for a practical reason: the service definition describes what your API *does*, and the annotations describe how it *looks*. Keeping them separate means you can modify the UI without changing the API contract.
 
@@ -403,7 +403,7 @@ The `Identification` collection defines the action buttons that appear in the ob
 
 ---
 
-## 10.9 Running locally
+## 9.9 Running locally
 
 The local setup requires two terminal sessions — one for each process.
 
@@ -453,7 +453,7 @@ For the Fiori Elements preview to show all features, ensure you access it via th
 
 ---
 
-## 10.10 Testing the full flow
+## 9.10 Testing the full flow
 
 With both services running, walk through the complete flow from document upload to agent query.
 
@@ -483,7 +483,7 @@ The response includes the `answer` field with the agent's response and the `path
 
 ---
 
-## 10.11 What you can do after this chapter
+## 9.11 What you can do after this chapter
 
 The system is now complete from ingestion to query to UI. You have:
 
@@ -503,7 +503,7 @@ The natural next steps are:
 
 ---
 
-## 10.12 Checkpoint checklist
+## 9.12 Checkpoint checklist
 
 Before moving to the next chapter, verify the following:
 

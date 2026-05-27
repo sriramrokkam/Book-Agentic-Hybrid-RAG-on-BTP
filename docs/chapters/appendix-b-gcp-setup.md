@@ -2,7 +2,7 @@
 
 ---
 
-> **When to read this appendix.** Chapter 3 walks through the full platform setup at a brisk pace. If you have worked with GCP before, Chapter 3 gives you everything you need. If GCP is new to you — or if you want the full step-by-step with security guidance — work through this appendix first, then return to Chapter 3. This appendix covers the same GCP steps in greater depth.
+> **When to read this appendix.** Chapter 2 walks through the full platform setup at a brisk pace. If you have worked with GCP before, Chapter 2 gives you everything you need. If GCP is new to you — or if you want the full step-by-step with security guidance — work through this appendix first, then return to Chapter 2. This appendix covers the same GCP steps in greater depth.
 
 ---
 
@@ -41,7 +41,7 @@ A service account is a non-human Google identity (e.g., `msds-rag-agent@your-pro
 - Strongly recommended for BTP Cloud Foundry deployment — the JSON key is stored as a BTP secret or as a Destination Service credential and never embedded in application code.
 - Allows fine-grained IAM role binding, audit logging, and key rotation.
 
-**Which to use:** If you are working through this book on a laptop for the first time, use Option A. When you reach Chapter 11 (BTP Deployment), the deployment guide will instruct you to create a service account at that point. If you want to complete all steps now, do Option A first to verify the connection, then follow section B.6 to create the service account.
+**Which to use:** If you are working through this book on a laptop for the first time, use Option A. When you reach Chapter 10 (BTP Deployment), the deployment guide will instruct you to create a service account at that point. If you want to complete all steps now, do Option A first to verify the connection, then follow section B.6 to create the service account.
 
 ---
 
@@ -99,7 +99,7 @@ GCP APIs are not active by default. You must explicitly enable each one you inte
 This book uses two APIs:
 
 - **Generative Language API** — provides the `gemini-2.5-flash-preview-05-20` model and `text-embedding-004` via the `google-generativeai` Python SDK.
-- **Vertex AI API** — provides the same models via the `langchain-google-genai` and `vertexai` SDKs, and is required for the BTP deployment configuration in Chapter 11.
+- **Vertex AI API** — provides the same models via the `langchain-google-genai` and `vertexai` SDKs, and is required for the BTP deployment configuration in Chapter 10.
 
 Enable both now. It takes about two minutes each.
 
@@ -166,7 +166,7 @@ If `.env` does not appear in the output, add the line `.env` to `agents/.gitigno
 
 ## B.7 Step 4B — Create a Service Account (Option B — Required for BTP Deployment)
 
-Follow these steps if you are setting up the service account now. If you are using Option A for the moment, you can skip to section B.8 and return here before Chapter 11.
+Follow these steps if you are setting up the service account now. If you are using Option A for the moment, you can skip to section B.8 and return here before Chapter 10.
 
 **Create the service account:**
 
@@ -318,7 +318,7 @@ To monitor your actual spend, go to **Billing** > **Reports** in the GCP Console
 
 ## B.10 Verification Checklist
 
-Before returning to Chapter 3, confirm each of the following. Check them off in order — do not skip ahead if one item is unresolved.
+Before returning to Chapter 2, confirm each of the following. Check them off in order — do not skip ahead if one item is unresolved.
 
 - [ ] **GCP project created.** You have a project named `msds-hybrid-rag` (or your chosen name) and you have recorded the Project ID. The project appears when you click the project selector in the GCP Console.
 
@@ -330,8 +330,8 @@ Before returning to Chapter 3, confirm each of the following. Check them off in 
 
 - [ ] **Test call succeeded.** You ran the Python test in section B.8 and received a valid sentence in response. The test file has been deleted.
 
-If all five items are checked, your GCP environment is ready. Return to Chapter 3, section 3.4 to continue with the SAP BTP trial account setup.
+If all five items are checked, your GCP environment is ready. Return to Chapter 2, section 3.4 to continue with the SAP BTP trial account setup.
 
 ---
 
-> **Next step in Chapter 3.** After completing this appendix, the GCP portion of Chapter 3 (section 3.4) will be familiar. That section adds one more step not covered here: creating a **BTP Destination** that stores the GCP service account credentials so that the deployed application on BTP Cloud Foundry can call Vertex AI without embedding credentials in the application bundle. That step requires the service account JSON key from section B.7 — if you skipped Option B, you will need to complete it before Chapter 11.
+> **Next step in Chapter 2.** After completing this appendix, the GCP portion of Chapter 2 (section 3.4) will be familiar. That section adds one more step not covered here: creating a **BTP Destination** that stores the GCP service account credentials so that the deployed application on BTP Cloud Foundry can call Vertex AI without embedding credentials in the application bundle. That step requires the service account JSON key from section B.7 — if you skipped Option B, you will need to complete it before Chapter 10.

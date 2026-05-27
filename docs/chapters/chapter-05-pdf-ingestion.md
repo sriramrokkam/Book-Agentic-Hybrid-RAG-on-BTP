@@ -1,6 +1,6 @@
-# Chapter 6: The PDF Ingestion Pipeline
+# Chapter 5: The PDF Ingestion Pipeline
 
-In Chapter 5 you built two separate storage systems on SAP HANA Cloud: a vector table that answers fuzzy semantic questions and a knowledge graph that answers precise factual ones. Both systems are powerful in isolation. The missing piece is the plumbing — the code that takes a raw PDF file and feeds both systems at the same time, cleanly, without one pipeline blocking the other, and without leaving the user waiting at a spinning upload button.
+In Chapter 4 you built two separate storage systems on SAP HANA Cloud: a vector table that answers fuzzy semantic questions and a knowledge graph that answers precise factual ones. Both systems are powerful in isolation. The missing piece is the plumbing — the code that takes a raw PDF file and feeds both systems at the same time, cleanly, without one pipeline blocking the other, and without leaving the user waiting at a spinning upload button.
 
 That is what this chapter builds. By the end of it you will have `agents/srv/doc_srv.py`, a production-quality ingestion service that receives a PDF upload, immediately acknowledges the request, and runs two threads simultaneously — one chunking and embedding text into the vector store, the other extracting structured triples into the knowledge graph. The caller gets a response in milliseconds. The heavy lifting happens asynchronously.
 
@@ -8,14 +8,14 @@ There is a subtlety that trips up almost every developer the first time they wri
 
 ---
 
-## 6.1 The dual-pipeline architecture
+## 5.1 The dual-pipeline architecture
 
 The fundamental design choice in this chapter is that every PDF upload triggers exactly two independent pipelines, running in parallel, with no coordination between them except that they both read from the same source file.
 
 ![Dual-Pipeline Ingestion Architecture](docs/screenshots/diagrams/06-dual-pipeline-architecture.png)
 *Figure 6.1: The dual-pipeline ingestion architecture. Thread 1 (left) chunks the PDF text and stores embeddings in MSDS_VECTORS. Thread 2 (right) sends full text to Gemini for triple extraction and stores the result as a named RDF graph in HANA. Both threads update their own status field on completion. The FastAPI endpoint returns immediately, before either thread has finished.*
 
-### 6.1.1 Why process both in parallel?
+### 5.1.1 Why process both in parallel?
 
 The naive approach is sequential: extract text, chunk, embed, store vectors — then extract text again, call Gemini for triples, store the graph. Sequential processing is easy to reason about. It is also 2× slower than it needs to be, because the two pipelines have no dependency on each other. The vector pipeline does not need to wait for Gemini to finish triple extraction. The KG pipeline does not need to wait for all chunks to be embedded.
 
@@ -32,7 +32,7 @@ The deeper reason, though, is architectural. The two pipelines have genuinely di
 
 Because they differ in shape, running them in parallel does not require any shared mutable state. Thread 1 owns its list of chunks. Thread 2 owns the full document string. Neither touches the other's work.
 
-### 6.1.2 The fire-and-forget pattern
+### 5.1.2 The fire-and-forget pattern
 
 The upload endpoint returns `{"status": "processing"}` immediately after spawning the background threads. The HTTP response is sent before either pipeline has done any significant work.
 
@@ -44,7 +44,7 @@ The tradeoff is that the caller cannot know from the upload response whether ing
 
 ---
 
-## 6.2 PDF text extraction with PyMuPDF
+## 5.2 PDF text extraction with PyMuPDF
 
 PyMuPDF (import name `fitz`) is a Python binding for the MuPDF rendering library. It is the fastest Python-accessible PDF parser available and handles the dirty reality of MSDS PDFs well: multi-column layouts, embedded tables, rotated pages, and the mixture of text layers and bitmap content that characterises scanned regulatory documents.
 
@@ -68,7 +68,7 @@ def extract_text(pdf_path: str) -> str:
 
 `page.get_text()` with no arguments returns the page's text content in reading order, with word-level coordinates used internally to reconstruct flow. For most MSDS documents this produces clean, paragraph-structured text. For scanned PDFs (no text layer) it returns an empty string — we will handle that case below.
 
-### 6.2.1 Extracting with metadata
+### 5.2.1 Extracting with metadata
 
 In `agents/srv/doc_srv.py` we use a slightly richer version that preserves page boundaries:
 
@@ -102,7 +102,7 @@ The `ValueError` is important. If a scanned PDF arrives and we silently extract 
 
 > **Warning:** PyMuPDF's `get_text()` preserves hyphenation artifacts from PDF layout. Words broken across lines (e.g., "flamma-" + newline + "ble") will appear as a hyphenated pair in the extracted string. For MSDS documents this rarely causes problems because the affected words are typically in multi-column safety tables, but if your documents have heavy hyphenation, consider a post-processing step: `text = re.sub(r'-\n', '', text)`.
 
-### 6.2.2 Handling upload files in FastAPI
+### 5.2.2 Handling upload files in FastAPI
 
 FastAPI receives uploaded files as `UploadFile` objects. We need to write the file to disk before passing the path to PyMuPDF, because `fitz.open()` accepts file paths or byte buffers — and the byte buffer approach for large PDFs can exhaust memory. The safest pattern uses Python's `tempfile`:
 
@@ -123,13 +123,13 @@ Using `delete=False` gives us a path we can pass to background threads. We delet
 
 ---
 
-## 6.3 Chunking strategy for vector search
+## 5.3 Chunking strategy for vector search
 
 The vector pipeline does not process the full document text as a single unit. A 30-page MSDS document contains 8,000–12,000 words. Embedding that as one unit would produce a single 768-dimensional vector that averages the meaning of everything — hazard codes, first-aid steps, disposal procedures, regulatory text — into an undifferentiated blob. Cosine similarity against that vector would return the document for any question, because the document contains something relevant to almost any safety question. Precision would be zero.
 
 The answer is chunking: splitting the document into smaller, semantically coherent pieces and embedding each independently. The cosine search then retrieves the specific chunks that are most relevant to a question, not the whole document.
 
-### 6.3.1 Our chunking parameters
+### 5.3.1 Our chunking parameters
 
 We use three parameters:
 
@@ -147,7 +147,7 @@ Material: Acetone (MAT-001)\n\n<chunk text>
 
 Adding the material name to every chunk significantly improves retrieval accuracy for multi-document queries. Without it, a chunk about "flammable liquid" could match any of dozens of materials.
 
-### 6.3.2 The chunker function
+### 5.3.2 The chunker function
 
 ```python
 import re
@@ -193,7 +193,7 @@ def chunk_text(
 
 > **Tip:** This chunker uses a word-count approximation for token count (`1 token ≈ 0.75 words`). For production use, replace the approximation with the `tiktoken` library: `len(tiktoken.encoding_for_model("text-embedding-ada-002").encode(text))`. The approximation is accurate enough for MSDS documents, where prose density is fairly uniform.
 
-### 6.3.3 Why the KG pipeline does not chunk
+### 5.3.3 Why the KG pipeline does not chunk
 
 The knowledge graph pipeline receives the **full document text**, not chunks. This is a deliberate asymmetry.
 
@@ -203,11 +203,11 @@ For the KG pipeline, the goal is to extract a small number of high-precision fac
 
 ---
 
-## 6.4 Thread-local HANA connections
+## 5.4 Thread-local HANA connections
 
 This section addresses the most important implementation detail in this chapter. Get it wrong and you will see intermittent `hdbcli` errors that are extremely difficult to debug. Understand it and the threading model becomes straightforward.
 
-### 6.4.1 Why connections cannot be shared across threads
+### 5.4.1 Why connections cannot be shared across threads
 
 The `hdbcli` driver maintains a stateful protocol session on each connection object. Internally, a connection tracks the current transaction state, pending fetch buffers for open cursors, and the sequence of SQL commands in the current batch. When two threads share a single connection and execute concurrently, they can each call `cursor.execute()` at the same time. The driver serialises the calls — but by the time the second call returns, the first thread may have already called `cursor.fetchall()` on a different cursor that was internally sharing the same fetch buffer. The result is that one thread reads the other thread's data, or gets an exception, or silently gets an empty result.
 
@@ -215,7 +215,7 @@ None of these failures are deterministic. They depend on exact scheduling and ti
 
 > **Warning:** Never share an `hdbcli` connection across threads. The `hdbcli` documentation explicitly states that connection objects are not thread-safe. This applies to most database drivers, not just HANA. When in doubt, assume a connection is single-threaded.
 
-### 6.4.2 The `threading.local()` solution
+### 5.4.2 The `threading.local()` solution
 
 Python's `threading.local()` provides a simple mechanism: an object where each attribute access returns a different value depending on which thread is reading it. When Thread 1 sets `_local.conn = hana_db.connect()`, Thread 2 sees `_local.conn` as unset. Each thread must initialise its own value.
 
@@ -257,11 +257,11 @@ The `get_hana_connection()` function is called at the start of each thread funct
 
 ---
 
-## 6.5 The ingestion flow in detail
+## 5.5 The ingestion flow in detail
 
 Now we have all the pieces. Let us trace the full execution path for a single document upload.
 
-### 6.5.1 The upload endpoint
+### 5.5.1 The upload endpoint
 
 ```python
 from fastapi import FastAPI, File, Form, UploadFile
@@ -298,7 +298,7 @@ async def process_upload(
 
 Three things happen before the response is sent: the uploaded file is written to a temp path, `_mark_processing()` sets both status fields to `'PROCESSING'` in HANA, and `_run_dual_pipeline()` is submitted to an executor — it runs *after* the response returns.
 
-### 6.5.2 The dual-pipeline orchestrator
+### 5.5.2 The dual-pipeline orchestrator
 
 ```python
 def _run_dual_pipeline(
@@ -347,7 +347,7 @@ def _run_dual_pipeline(
 
 The `with ThreadPoolExecutor(max_workers=2)` block creates exactly two worker threads. `as_completed()` yields futures as they finish; we capture any exception from each without letting it propagate, so a failure in one pipeline does not cancel the other.
 
-### 6.5.3 Thread 1 — the vector pipeline
+### 5.5.3 Thread 1 — the vector pipeline
 
 ```python
 from agents.srv.vector_srv import embed_text, upsert_vectors
@@ -379,7 +379,7 @@ def _vector_pipeline(
 
 > **Tip:** For large document batches, consider batching the embedding calls. The `text-embedding-004` endpoint accepts up to 250 texts in a single request. Instead of 60 individual calls for 60 chunks, one batched call returns all 60 embeddings at once. The latency drops from ~10 seconds to ~1.5 seconds for the embed step. Batching is shown in Appendix C.
 
-### 6.5.4 Thread 2 — the knowledge graph pipeline
+### 5.5.4 Thread 2 — the knowledge graph pipeline
 
 ```python
 from agents.srv.kg_srv import extract_triples_from_text, insert_triples
@@ -398,17 +398,17 @@ def _kg_pipeline(text: str, material_number: str) -> None:
     close_thread_connection()
 ```
 
-`extract_triples_from_text()` is the Gemini extraction function built in Chapter 5. It sends the full text to `gemini-1.5-pro` with a structured prompt that includes the ontology predicates and asks for JSON output. `insert_triples()` builds a SPARQL `INSERT DATA` query and calls `SPARQL_EXECUTE` on the HANA connection.
+`extract_triples_from_text()` is the Gemini extraction function built in Chapter 4. It sends the full text to `gemini-1.5-pro` with a structured prompt that includes the ontology predicates and asks for JSON output. `insert_triples()` builds a SPARQL `INSERT DATA` query and calls `SPARQL_EXECUTE` on the HANA connection.
 
 The "zero triples" check is deliberate. A successful Gemini call that returns no triples is worse than a clean failure — the document would appear as `kgStatus = 'DONE'` to the user but produce no graph query results. Raising `ValueError` here sets `kgStatus = 'ERROR'`, which makes the problem visible.
 
 ---
 
-## 6.6 Status tracking
+## 5.6 Status tracking
 
 The user interface needs to know when ingestion is complete. The CAP frontend polls `GET /status/{materialNumber}` every 3 seconds until both pipelines report a terminal state (`DONE` or `ERROR`).
 
-### 6.6.1 The status fields
+### 5.6.1 The status fields
 
 The `MSDS_DOCUMENTS` table has two status columns:
 
@@ -419,7 +419,7 @@ The `MSDS_DOCUMENTS` table has two status columns:
 
 Both are populated before the upload returns (`PROCESSING`), updated by the background threads on completion, and read by the status endpoint. Using two separate columns rather than one combined status allows the UI to show partial progress — "Vector: DONE, KG: processing..." — and makes it easier to retry only the failed pipeline.
 
-### 6.6.2 Status helper functions
+### 5.6.2 Status helper functions
 
 ```python
 def _mark_processing(material_number: str) -> None:
@@ -459,7 +459,7 @@ def _mark_kg_status(material_number: str, status: str, error_message=None) -> No
     close_thread_connection()
 ```
 
-### 6.6.3 The status endpoint
+### 5.6.3 The status endpoint
 
 ```python
 @app.get("/status/{material_number}")
@@ -498,7 +498,7 @@ The `complete` boolean is the sentinel the CAP frontend uses to stop polling. If
 
 ---
 
-## 6.7 Error handling — what happens when one pipeline fails
+## 5.7 Error handling — what happens when one pipeline fails
 
 The most important design property of this ingestion service is **error isolation**: a failure in one pipeline does not affect the other.
 
@@ -515,9 +515,9 @@ Scenario 2 deserves attention because it reflects a real operational condition. 
 
 ---
 
-## 6.8 Testing — upload five MSDS documents
+## 5.8 Testing — upload five MSDS documents
 
-### 6.8.1 Start the service
+### 5.8.1 Start the service
 
 ```bash
 cd agents
@@ -525,7 +525,7 @@ source .venv/bin/activate
 uvicorn main:app --reload --port 8000
 ```
 
-### 6.8.2 Upload the first document
+### 5.8.2 Upload the first document
 
 ```bash
 curl -s -X POST http://localhost:8000/process-upload \
@@ -540,7 +540,7 @@ Expected response (within 200 ms):
 {"status": "processing", "materialNumber": "MAT-001"}
 ```
 
-### 6.8.3 Poll for completion
+### 5.8.3 Poll for completion
 
 ```bash
 watch -n3 'curl -s http://localhost:8000/status/MAT-001 | python3 -m json.tool'
@@ -560,7 +560,7 @@ After 8–15 seconds:
 }
 ```
 
-### 6.8.4 Verify the vector store
+### 5.8.4 Verify the vector store
 
 ```sql
 SELECT
@@ -574,7 +574,7 @@ ORDER BY CHUNK_INDEX;
 
 Expected: every row has `VECTOR_DIM = 768`.
 
-### 6.8.5 Verify the knowledge graph
+### 5.8.5 Verify the knowledge graph
 
 ```python
 from hdbcli import dbapi
@@ -621,7 +621,7 @@ Upload the remaining four PDFs (`MAT-002` through `MAT-005`) with the same patte
 
 ---
 
-## 6.9 Summary
+## 5.9 Summary
 
 This chapter built the pipeline that bridges PDF uploads and the dual-store knowledge layer. The key design decisions:
 
@@ -634,9 +634,9 @@ This chapter built the pipeline that bridges PDF uploads and the dual-store know
 
 ---
 
-## 6.10 Checkpoint
+## 5.10 Checkpoint
 
-Before moving to Chapter 7, confirm each of the following:
+Before moving to Chapter 6, confirm each of the following:
 
 - [ ] `agents/srv/doc_srv.py` exists and `uvicorn main:app --port 8000` starts without import errors.
 - [ ] `POST /process-upload` with a real MSDS PDF returns `{"status": "processing"}` within 500 ms.
@@ -648,8 +648,8 @@ Before moving to Chapter 7, confirm each of the following:
 - [ ] Re-uploading the same PDF overwrites existing rows rather than creating duplicates.
 - [ ] Uploading a scan-only PDF results in both statuses showing `ERROR`, not `PROCESSING`.
 
-With the ingestion pipeline verified and five documents loaded into both stores, you are ready for the agentic layer. Chapter 7 introduces LangGraph — the framework that will orchestrate queries against these two stores in parallel and synthesise a single coherent answer.
+With the ingestion pipeline verified and five documents loaded into both stores, you are ready for the agentic layer. Chapter 6 introduces LangGraph — the framework that will orchestrate queries against these two stores in parallel and synthesise a single coherent answer.
 
 ---
 
-*End of Chapter 6*
+*End of Chapter 5*

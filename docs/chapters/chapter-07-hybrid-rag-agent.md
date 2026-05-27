@@ -1,6 +1,6 @@
-# Chapter 8: The Parallel Hybrid RAG Agent
+# Chapter 7: The Parallel Hybrid RAG Agent
 
-In Chapter 7 we built a LangGraph agent with a stub retriever — a placeholder that returned a fixed string instead of real data. In Chapters 4 and 5 we built the real retrieval systems: a vector store in SAP HANA Cloud and a knowledge graph queried via SPARQL. In Chapter 6 we built the ingestion pipeline that populates both. All the pieces exist. This chapter assembles them.
+In Chapter 6 we built a LangGraph agent with a stub retriever — a placeholder that returned a fixed string instead of real data. In Chapters 3 and 4 we built the real retrieval systems: a vector store in SAP HANA Cloud and a knowledge graph queried via SPARQL. In Chapter 5 we built the ingestion pipeline that populates both. All the pieces exist. This chapter assembles them.
 
 The central design question is: when a user asks a question, do we run vector search first and knowledge graph search second? Or do we ask the LLM to decide which one to use? The answer to both is no. We run them in parallel, always, regardless of the question. This chapter explains why that decision is correct and shows you exactly how to implement it.
 
@@ -8,7 +8,7 @@ By the end of this chapter you will have a working hybrid RAG system: a FastAPI 
 
 ---
 
-## 8.1 Why parallel beats sequential
+## 7.1 Why parallel beats sequential
 
 Consider the naive approach: run vector search, check the result, then decide whether to also run KG search. This is sequential routing, and it has a hidden cost.
 
@@ -28,7 +28,7 @@ The parallel approach is faster than all sequential variants and uses fewer LLM 
 
 ---
 
-## 8.2 The agent state
+## 7.2 The agent state
 
 Create `agents/agents/state.py`:
 
@@ -62,7 +62,7 @@ This state is the contract between every component in the system. The vector cha
 
 ---
 
-## 8.3 The vector chain
+## 7.3 The vector chain
 
 Create `agents/agents/vector_chain.py`:
 
@@ -156,7 +156,7 @@ Three steps: embed the question into a 768-dimensional vector, run a cosine simi
 
 ---
 
-## 8.4 The KG chain
+## 7.4 The KG chain
 
 Create `agents/agents/kg_chain.py`:
 
@@ -298,7 +298,7 @@ The KG chain has one critical feature beyond basic SPARQL execution: the retry-o
 
 ---
 
-## 8.5 The merge function
+## 7.5 The merge function
 
 The merge function is the heart of hybrid RAG. It receives whatever the two chains produced and decides how to combine them.
 
@@ -362,7 +362,7 @@ Four cases, handled explicitly. When both chains return results, a third Gemini 
 
 ---
 
-## 8.6 The orchestrator
+## 7.6 The orchestrator
 
 Create `agents/agents/orchestrator.py`:
 
@@ -466,7 +466,7 @@ The orchestrator submits both chains to a `ThreadPoolExecutor` with `max_workers
 
 ---
 
-## 8.7 The FastAPI /query endpoint
+## 7.7 The FastAPI /query endpoint
 
 Add the endpoint to `agents/main.py`:
 
@@ -541,7 +541,7 @@ The endpoint validates the material number against `^[A-Za-z0-9_-]+$` — the sa
 
 ---
 
-## 8.8 The full request/response contract
+## 7.8 The full request/response contract
 
 ```json
 // Request
@@ -578,7 +578,7 @@ The response includes both the synthesised answer and the raw retrieval evidence
 
 ---
 
-## 8.9 Conversation history
+## 7.9 Conversation history
 
 The `/query` endpoint accepts a `history` list in the request body. This is how multi-turn conversations work without server-side session state.
 
@@ -605,11 +605,11 @@ The frontend keeps a rolling window of the last 10 messages — enough for conve
 
 ---
 
-## 8.10 Testing: three scenarios that prove hybrid wins
+## 7.10 Testing: three scenarios that prove hybrid wins
 
 The following three test cases demonstrate why hybrid retrieval is better than either strategy alone. Run them after uploading the acetone MSDS to both stores.
 
-### 8.10.1 The KG wins: precise structured facts
+### 7.10.1 The KG wins: precise structured facts
 
 ```bash
 curl -X POST http://localhost:8000/query \
@@ -635,7 +635,7 @@ properties. Refer to Section 2 for complete hazard identification...
 
 The KG returns the exact codes. The vector chain returns useful prose but buries the codes in a paragraph. The synthesised answer leads with the codes and adds the prose context.
 
-### 8.10.2 The vector wins: narrative safety procedures
+### 7.10.2 The vector wins: narrative safety procedures
 
 ```bash
 curl -X POST http://localhost:8000/query \
@@ -649,7 +649,7 @@ curl -X POST http://localhost:8000/query \
 
 The KG stores structured facts — hazard codes, exposure limits, precaution flags. It does not store the detailed first-aid procedure paragraph. The vector chain retrieves the exact passage from Section 4 of the MSDS. The final answer comes primarily from the vector chain here, with the KG contributing the exposure limit for context.
 
-### 8.10.3 Both contribute: a complex combined question
+### 7.10.3 Both contribute: a complex combined question
 
 ```bash
 curl -X POST http://localhost:8000/query \
@@ -665,7 +665,7 @@ The KG answers the first part precisely: H225 confirms flammable liquid classifi
 
 ---
 
-## 8.11 Monitoring chain performance
+## 7.11 Monitoring chain performance
 
 Add timing instrumentation to the orchestrator to track which chain is the bottleneck:
 
@@ -697,7 +697,7 @@ The wall-clock time is the slower chain, not the sum. If you ran these sequentia
 
 ---
 
-## 8.12 Summary
+## 7.12 Summary
 
 In this chapter we built the core of the hybrid RAG system:
 
@@ -710,13 +710,13 @@ In this chapter we built the core of the hybrid RAG system:
 - Demonstrated **stateless conversation history** passed in every request
 - Verified with **three test scenarios** that hybrid retrieval outperforms either strategy alone
 
-The parallel orchestrator is the most important design decision in this system. Everything built in Chapters 4, 5, 6, and 7 converges here.
+The parallel orchestrator is the most important design decision in this system. Everything built in Chapters 3, 4, 5, and 6 converges here.
 
 ---
 
-## 8.13 Checkpoint
+## 7.13 Checkpoint
 
-Before continuing to Chapter 9, verify the following:
+Before continuing to Chapter 8, verify the following:
 
 ```bash
 # 1. Both chains import without errors
@@ -746,8 +746,8 @@ curl -s -X POST http://localhost:8000/query \
   | python -m json.tool
 ```
 
-If all three commands succeed and the final curl returns a JSON response with an `answer` field, the hybrid RAG agent is working. Chapter 9 extends it with a multi-agent supervisor layer for complex, multi-domain queries.
+If all three commands succeed and the final curl returns a JSON response with an `answer` field, the hybrid RAG agent is working. Chapter 8 extends it with a multi-agent supervisor layer for complex, multi-domain queries.
 
 ---
 
-*End of Chapter 8*
+*End of Chapter 7*

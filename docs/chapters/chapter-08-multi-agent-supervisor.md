@@ -1,6 +1,6 @@
-# Chapter 9: The Multi-Agent Supervisor Pattern
+# Chapter 8: The Multi-Agent Supervisor Pattern
 
-In Chapter 8 we built a hybrid RAG agent that runs two retrieval strategies in parallel and merges their results. For the majority of questions — "what are the hazard codes?", "what are the storage instructions?" — that agent is the right tool. It is fast, deterministic, and requires no coordination overhead.
+In Chapter 7 we built a hybrid RAG agent that runs two retrieval strategies in parallel and merges their results. For the majority of questions — "what are the hazard codes?", "what are the storage instructions?" — that agent is the right tool. It is fast, deterministic, and requires no coordination overhead.
 
 But consider a different class of question: "I am setting up a new chemical storage facility that will handle acetone. What hazard classifications do I need to post, what are the legal worker exposure limits, and what personal protective equipment should I provide?" That question requires three distinct types of expertise: GHS classification knowledge, regulatory compliance knowledge, and safety procedure knowledge. A single agent with a single retrieval pass will mix these domains, risk missing one, and produce an answer that is harder to reason about.
 
@@ -10,7 +10,7 @@ This chapter introduces the **supervisor pattern**: a coordinator agent that rec
 
 ---
 
-## 9.1 The complexity ceiling
+## 8.1 The complexity ceiling
 
 A generalist agent has one prompt, one retrieval context, and one LLM call to produce its answer. When questions are simple and focused, this is efficient. When questions are complex and multi-domain, it creates three problems.
 
@@ -24,7 +24,7 @@ The supervisor pattern solves all three by decomposing the question *before* ret
 
 ---
 
-## 9.2 The supervisor pattern
+## 8.2 The supervisor pattern
 
 The supervisor pattern has four components:
 
@@ -42,29 +42,29 @@ The supervisor does not answer the question. It only routes. This separation of 
 
 ---
 
-## 9.3 The four specialist agents for MSDS
+## 8.3 The four specialist agents for MSDS
 
 We design four specialists, each focused on a specific aspect of material safety data:
 
-### 9.3.1 HazardAgent
+### 8.3.1 HazardAgent
 
 **Domain:** GHS classifications, hazard codes, hazard statements, signal words.
 **Retrieval strategy:** Knowledge graph — structured facts from `hasHazardCode` and `hazardDescription` predicates.
 **Strength:** Returns exact codes (H225, H319, H336) and their official descriptions.
 
-### 9.3.2 ComplianceAgent
+### 8.3.2 ComplianceAgent
 
 **Domain:** Exposure limits, regulatory thresholds, permissible concentrations.
 **Retrieval strategy:** Knowledge graph — structured facts from `hasExposureLimit` predicates.
 **Strength:** Returns precise values with units (500 ppm TWA, 750 ppm STEL) and the regulatory body that set them (OSHA, ACGIH).
 
-### 9.3.3 SafetyAgent
+### 8.3.3 SafetyAgent
 
 **Domain:** Precautions, first aid procedures, PPE requirements, storage and handling.
 **Retrieval strategy:** Vector search — narrative text from Sections 7 and 8 of the MSDS.
 **Strength:** Returns detailed procedural instructions that are not easily reduced to structured triples.
 
-### 9.3.4 SummaryAgent
+### 8.3.4 SummaryAgent
 
 **Domain:** Synthesis.
 **Retrieval strategy:** None — reads outputs from the three specialists.
@@ -72,7 +72,7 @@ We design four specialists, each focused on a specific aspect of material safety
 
 ---
 
-## 9.4 Shared state for the supervisor graph
+## 8.4 Shared state for the supervisor graph
 
 Create `agents/agents/supervisor_state.py`:
 
@@ -106,7 +106,7 @@ The `sub_questions` dictionary maps specialist names to the focused questions th
 
 ---
 
-## 9.5 The supervisor node
+## 8.5 The supervisor node
 
 The supervisor's job is to read the user's question and decide which specialists are needed and what sub-question to give each one.
 
@@ -183,9 +183,9 @@ The supervisor uses temperature 0.0 — routing decisions should be deterministi
 
 ---
 
-## 9.6 The specialist agents
+## 8.6 The specialist agents
 
-Each specialist is a focused version of the hybrid RAG chains from Chapter 8, but constrained to its domain.
+Each specialist is a focused version of the hybrid RAG chains from Chapter 7, but constrained to its domain.
 
 ```python
 import logging
@@ -246,11 +246,11 @@ def safety_agent(state: SupervisorState) -> dict:
     return {"safety_answer": answer}
 ```
 
-Each specialist wraps the existing chains from Chapter 8 — they are not new implementations, just focused invocations. The HazardAgent and ComplianceAgent use the KG chain first (structured facts are exactly what they need) and fall back to the vector chain if the KG returns nothing. The SafetyAgent uses the vector chain first (narrative procedures live in prose) and falls back to KG.
+Each specialist wraps the existing chains from Chapter 7 — they are not new implementations, just focused invocations. The HazardAgent and ComplianceAgent use the KG chain first (structured facts are exactly what they need) and fall back to the vector chain if the KG returns nothing. The SafetyAgent uses the vector chain first (narrative procedures live in prose) and falls back to KG.
 
 ---
 
-## 9.7 The summary agent
+## 8.7 The summary agent
 
 ```python
 def summary_agent(state: SupervisorState) -> dict:
@@ -304,7 +304,7 @@ Answer:"""
 
 ---
 
-## 9.8 Building the supervisor graph
+## 8.8 Building the supervisor graph
 
 ```python
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -360,7 +360,7 @@ The graph is three nodes: supervisor → specialists (parallel) → summary. The
 
 ---
 
-## 9.9 When to use the supervisor vs the direct agent
+## 8.9 When to use the supervisor vs the direct agent
 
 The supervisor adds latency — one extra LLM call for routing and one for synthesis. For simple questions, this overhead is not justified.
 
@@ -377,7 +377,7 @@ A practical rule: if the question contains "and" connecting two distinct domains
 
 ---
 
-## 9.10 The /query-advanced endpoint
+## 8.10 The /query-advanced endpoint
 
 Add the supervisor endpoint to `agents/main.py`:
 
@@ -433,7 +433,7 @@ The `use_supervisor` flag lets the caller choose which agent to use. The Fiori U
 
 ---
 
-## 9.11 Testing: a question that requires all three specialists
+## 8.11 Testing: a question that requires all three specialists
 
 ```bash
 curl -X POST http://localhost:8000/query-advanced \
@@ -467,7 +467,7 @@ Compare this to the direct hybrid RAG agent with the same question: the single r
 
 ---
 
-## 9.12 Summary
+## 8.12 Summary
 
 In this chapter we extended the system from a single agent to a coordinated multi-agent system:
 
@@ -483,9 +483,9 @@ The multi-agent supervisor is the most architecturally sophisticated component w
 
 ---
 
-## 9.13 Checkpoint
+## 8.13 Checkpoint
 
-Before continuing to Chapter 10, verify the following:
+Before continuing to Chapter 9, verify the following:
 
 ```bash
 # 1. Supervisor graph compiles
@@ -522,8 +522,8 @@ curl -s -X POST http://localhost:8000/query-advanced \
   }' | python -m json.tool
 ```
 
-If the supervisor graph compiles cleanly, the routing test assigns only `["hazard"]` or a small subset of specialists to a simple question, and the curl returns a valid JSON response — the multi-agent system is working. Chapter 10 exposes this entire backend through an SAP CAP OData V4 service with a Fiori Elements UI.
+If the supervisor graph compiles cleanly, the routing test assigns only `["hazard"]` or a small subset of specialists to a simple question, and the curl returns a valid JSON response — the multi-agent system is working. Chapter 9 exposes this entire backend through an SAP CAP OData V4 service with a Fiori Elements UI.
 
 ---
 
-*End of Chapter 9*
+*End of Chapter 8*
