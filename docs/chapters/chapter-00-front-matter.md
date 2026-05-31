@@ -36,11 +36,6 @@ owners. The author is not affiliated with SAP SE or Google LLC.
 
 ---
 
-## Dedication
-
-*[To be added by Sriram Rokkam]*
-
----
 
 ## Preface
 
@@ -327,14 +322,6 @@ navigation to find the equivalent option.
 with actual screenshots in the final published version.
 
 ---
-
-## Acknowledgements
-
-This book would not exist without the SAP BTP and Google Cloud developer communities — their open documentation, community answers, and shared examples shaped every chapter.
-
-Thanks to the teams behind LangGraph, LangChain, SAP HANA Cloud, and Vertex AI whose engineering made this architecture possible. Special thanks to colleagues at SAP who provided feedback, challenged assumptions, and pushed for precision over cleverness.
-
-The code in this book was written, broken, debugged, and rewritten many times. Every failure taught something. Every working test was a small victory.
 
 ---
 
