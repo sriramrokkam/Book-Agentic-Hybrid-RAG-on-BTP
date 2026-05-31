@@ -42,23 +42,7 @@ owners. The author is not affiliated with SAP SE or Google LLC.
 
 ---
 
-## Foreword
-
-*[To be written by a colleague, SAP contact, or industry peer after
-the book is complete. 300–500 words. Suggested topics: why Agentic AI
-matters for SAP customers today, why the BTP + Vertex AI approach is
-relevant, and why the author is credible on this subject.]*
-
-**— [Name], [Title], [Company]**
-
----
-
 ## Preface
-
-*[To be written by Sriram Rokkam in his own voice. Suggested content below —
-edit freely, this is your personal story.]*
-
----
 
 I have spent years working at the intersection of SAP and cloud platforms,
 watching enterprises struggle with the same problem in different forms: they
@@ -346,19 +330,24 @@ with actual screenshots in the final published version.
 
 ## Acknowledgements
 
-*[To be added by Sriram Rokkam. Suggested: colleagues who reviewed
-chapters, the SAP and Google Cloud developer communities, anyone who
-provided feedback or inspiration.]*
+This book would not exist without the SAP BTP and Google Cloud developer communities — their open documentation, community answers, and shared examples shaped every chapter.
+
+Thanks to the teams behind LangGraph, LangChain, SAP HANA Cloud, and Vertex AI whose engineering made this architecture possible. Special thanks to colleagues at SAP who provided feedback, challenged assumptions, and pushed for precision over cleverness.
+
+The code in this book was written, broken, debugged, and rewritten many times. Every failure taught something. Every working test was a small victory.
 
 ---
 
 ## About the Author
 
-**Sriram Rokkam** is a [title] with [X] years of experience building
-enterprise applications on SAP BTP and Google Cloud Platform.
+**Sriram Rokkam** is a Global Business AI Architect at SAP with over 20 years of experience in SAP Supply Chain Management and enterprise platform engineering. He works at the intersection of SAP BTP, Google Cloud Platform, and applied AI — spanning predictive analytics, generative AI, and agentic systems.
 
-*[Complete this section in your own words — your current role,
-notable projects, SAP community involvement, LinkedIn/GitHub handles.]*
+A hands-on engineer and practitioner, Sriram has designed and built AI-powered solutions across supply chain, procurement, and quality management domains. He is passionate about making agentic AI practical and production-ready for SAP customers — not as a research exercise, but as running software that solves real business problems.
+
+He writes and builds at the intersection of LangGraph, SAP HANA Cloud, and Google Vertex AI. His work on hybrid RAG architectures for SAP environments forms the foundation of this book.
+
+- **GitHub:** github.com/sriramrokkam
+- **LinkedIn:** linkedin.com/in/sriramrokkam
 
 ---
 
