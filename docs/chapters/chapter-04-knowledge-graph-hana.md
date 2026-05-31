@@ -48,8 +48,8 @@ Read those rows. You have just read a Knowledge Graph. Each row is a fact about 
 
 Because if you draw it, it looks like one. Subjects and objects are nodes; predicates are edges. The same certifying lab "Bureau Veritas Testing GmbH" might be the object of many batches' `certifiedBy` edges. The same certificate number might appear in many audit queries. The graph emerges naturally from shared values.
 
-![Knowledge Graph Node: Batch Quality Certificate](docs/screenshots/diagrams/01-kg-acetone-node.png)
-*Figure: RDF Knowledge Graph representation of a Batch Quality Certificate — four triples extracted from a single document, stored as a named graph in SAP HANA Cloud*
+![MSDS Knowledge Graph Ontology](docs/screenshots/diagrams/01-kg-acetone-node.png)
+*Figure: Full MSDS ontology graph — classes (green), datatype properties (orange), and object properties shown as a directed graph. Each node type and predicate in this graph is defined in `MSDS_Ontology.ttl` and constrains what the LLM can extract from MSDS documents.*
 
 ### What does this give us that a relational schema does not?
 
